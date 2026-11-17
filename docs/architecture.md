@@ -6,7 +6,8 @@
 
 ```mermaid
 flowchart LR
-  UI[React画面] --> API[Python API]
+  UI[React画面] --> API[Slide Library API]
+  Agent[Agent・Skill] --> API
   API --> Store[メタデータDB]
   API --> Files[ファイル保存領域]
   Import[PDF/PPTX取込処理] --> Store
@@ -15,7 +16,7 @@ flowchart LR
 
 最初は単一のバックエンドとし、検索処理をAPI側に置く。フロントエンドは検索条件を送って結果を表示する。
 
-ローカル開発環境ではDocker Composeでフロントエンドとバックエンドを起動する。エージェントも同じ検索基盤を利用できるよう、検索機能はAPI経由で提供する。
+ローカル開発環境ではDocker Composeでフロントエンドとバックエンドを起動する。エージェントも同じSlide Library APIから検索・詳細情報を取得する。APIは一覧・検索で軽い概要を返し、解析情報や元ファイルは必要なページ・資料について個別に取得する。エージェント専用のバックエンドは設けない。
 
 ## フェーズ1の範囲
 
