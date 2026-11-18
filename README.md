@@ -26,6 +26,8 @@ docker compose up --build
 
 画面は `http://localhost:3000`、APIの接続確認は `http://localhost:3000/api/health`、API仕様の確認は `http://localhost:3000/api/docs` で行う。停止する場合は `docker compose down` を実行する。ホスト側に公開する開発用ポートは `127.0.0.1:3000` のみとする。現在のAPI実装は接続確認用のヘルスチェックのみである。
 
+バックエンドのPython依存関係は `backend/pyproject.toml` と `backend/uv.lock` で管理し、コンテナのビルド時に `uv sync --locked` でインストールする。
+
 ## 機能の展開
 
 | 段階 | 到達点 |
