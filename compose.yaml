@@ -3,6 +3,7 @@ services:
     build: ./backend
     volumes:
       - ./backend:/app
+      - ./data:/data
     expose:
       - "8000"
 

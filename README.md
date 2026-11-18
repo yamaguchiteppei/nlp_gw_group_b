@@ -28,6 +28,10 @@ docker compose up --build
 
 バックエンドのPython依存関係は `backend/pyproject.toml` と `backend/uv.lock` で管理し、コンテナのビルド時に `uv sync --locked` でインストールする。
 
+バックエンドのチェックは `docker compose exec api ruff check .` と `docker compose exec api pytest` で実行できる。
+
+ローカルのPDF/PPTXは `data/imports/` に配置できる。`data/` はGitの管理対象外で、バックエンドには `/data` としてマウントされる。現時点ではファイルを置いても自動登録はされない。
+
 ## 機能の展開
 
 | 段階 | 到達点 |
