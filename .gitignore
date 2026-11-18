@@ -1,0 +1,24 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local slide data and generated files
+data/
+storage/
+outputs/
+tmp/
+
+# Common build / cache directories (final stack is undecided)
+node_modules/
+dist/
+build/
+__pycache__/
+.pytest_cache/
+.venv/

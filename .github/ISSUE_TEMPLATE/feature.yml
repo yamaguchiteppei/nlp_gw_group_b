@@ -1,0 +1,39 @@
+name: "Feature / Task"
+description: "機能追加・改善・設計・ドキュメントなどの作業を提案する"
+title: "[Task] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: "概要・目的"
+      description: "何を、なぜ行うかを簡潔に記載してください。"
+      placeholder: "例：デザインテーマを比較できる一覧画面を設計する"
+    validations:
+      required: true
+  - type: textarea
+    id: work
+    attributes:
+      label: "作業内容"
+      description: "取り組む内容を、必要に応じて箇条書きで記載してください。"
+      placeholder: |
+        - 要件を整理する
+        - 画面構成案を作成する
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "完了条件"
+      description: "何ができればこのIssueをCloseできるかを記載してください。"
+      placeholder: |
+        - [ ] 画面構成案がレビューされている
+        - [ ] 関連する設計文書が更新されている
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: "関連Issue・参考資料（任意）"
+      placeholder: "関連Issue、仕様案、参考URLなど"
+    validations:
+      required: false
