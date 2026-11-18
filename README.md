@@ -16,6 +16,16 @@ React/Vite・TypeScriptのフロントエンドとPythonのバックエンドで
 
 Google Driveとの自動連携は後続段階で扱う。
 
+## ローカルでの起動
+
+Docker Composeでフロントエンドとバックエンドを起動する。
+
+```bash
+docker compose up --build
+```
+
+画面は `http://localhost:3000`、APIの接続確認は `http://localhost:3000/api/health`、API仕様の確認は `http://localhost:3000/api/docs` で行う。停止する場合は `docker compose down` を実行する。ホスト側に公開する開発用ポートは `127.0.0.1:3000` のみとする。現在のAPI実装は接続確認用のヘルスチェックのみである。
+
 ## 機能の展開
 
 | 段階 | 到達点 |
@@ -29,7 +39,7 @@ Google Driveとの自動連携は後続段階で扱う。
 
 ## 設計資料
 
-- [基本設計](docs/architecture.md)：構成と段階的な実装範囲
+- [基本設計](docs/architecture.md)：構成、段階的な実装範囲、セキュリティ方針
 - [データ設計](docs/data-model.md)：資料・ページ・タグ・フォルダ階層
 - [API仕様](docs/api.md)：検索、詳細、PDF/PPTX登録
 - [開発への参加方法](docs/CONTRIBUTING.md)：Issue、PR、レビュー、CI

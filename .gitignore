@@ -15,7 +15,7 @@ storage/
 outputs/
 tmp/
 
-# Common build / cache directories (final stack is undecided)
+# Build / cache directories
 node_modules/
 dist/
 build/

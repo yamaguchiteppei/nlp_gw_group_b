@@ -1,0 +1,20 @@
+services:
+  api:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+    expose:
+      - "8000"
+
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  web_node_modules:
