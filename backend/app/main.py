@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.slide_library_api import router as slide_library_router
 
 app = FastAPI(
     title="Slide Library API",
@@ -11,3 +12,5 @@ app = FastAPI(
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+app.include_router(slide_library_router)
