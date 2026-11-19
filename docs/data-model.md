@@ -4,7 +4,7 @@
 
 | 単位 | 主な項目 | 説明 |
 | --- | --- | --- |
-| 資料 `Document` | `id`, `title`, `authors[]`, `fileName`, `format`, `folderPath[]` | 元ファイルと全ページに共通する情報 |
+| 資料 `Document` | `id`, `title`, `authors[]`, `fileName`, `format`, `folderPath[]`。資料単位の検索では `category`, `presentationYear` も追加 | 元ファイルと全ページに共通する情報 |
 | ページ `Page` | `id`, `documentId`, `pageNumber`, `heading`, `summary`, `tags[]`, `previewUrl` | 検索結果・詳細表示の単位。API応答では `document` に資料情報も含める |
 
 `id` はファイル名やページ番号から作らない安定した識別子とする。`pageNumber` は1始まり。`format` は `pdf` または `pptx`。著者が不明なら空配列、見出し・概要が不明なら空文字列を使う。著者は資料に、役割を表すタグはページに付ける。
@@ -22,6 +22,8 @@
 Embeddingは検索の内部処理に用い、生ベクトルは通常の検索・詳細APIで返さない。元ファイルは資料に紐づき、プレビューはページに紐づく。
 
 `folderPath` は `['論文読み会', '2025']` のように上位から並ぶ出典情報である。フォルダ階層による絞り込みに使うが、フォルダ名をページのタグへ自動変換しない。Drive連携時は表示用の階層に加え、元フォルダを識別するIDを保持する方法を検討する。
+
+資料単位の検索では、資料区分 `category` と発表年 `presentationYear` を `Document` に持たせる。どちらも不明な場合を許容し、フォルダ階層だけから確定値を推測しない。資料内を前後にたどれるよう、ページは `documentId` と1始まりの `pageNumber` で順序を表す。代表画像は登録済みページのプレビューを参照し、別の画像資産を必須としない。
 
 ## PDF/PPTX登録情報
 
