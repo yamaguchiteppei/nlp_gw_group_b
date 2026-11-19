@@ -153,17 +153,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:
 }
 .active-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 9px;
   padding: 10px 0 13px;
   color: #686868;
 }
 .active-row button {
+  max-width: 100%;
+  overflow: hidden;
   padding: 5px 8px;
   border: 1px solid #c6c6c6;
   background: #ebebeb;
   color: #555;
   white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 12px;
 }
 .active-row button span { margin-left: 5px; }
@@ -314,7 +318,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:
   .results-frame { flex: 1; min-height: 0; overflow: hidden; }
   .results-section { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .results-toolbar { flex: none; }
-  .active-row { flex: none; overflow-x: auto; white-space: nowrap; }
+  .active-row { flex: none; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; }
   .filter-sidebar { overflow-y: auto; overscroll-behavior: contain; }
   .result-scroll {
     flex: 1;

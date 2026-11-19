@@ -84,4 +84,4 @@ export const slides: Slide[] = [
   { id: 'slide-12', deckId: 'deck-04', pageNumber: 7, heading: '実験結果の見せ方を組み立てる', summary: '数値の羅列から、結果を読み取れる図へ整理する。', role: '結果', visualType: '段階図', layoutType: '横方向フロー', narrativePattern: '変化の説明', artwork: 'timeline', tags: ['図解', '結果'] },
 ]
 
-export const deckById = Object.fromEntries(decks.map((deck) => [deck.id, deck])) as Record<string, Deck>
+export const deckById = new Map(decks.map((deck) => [deck.id, deck]))

@@ -11,13 +11,17 @@ const roles = [...new Set(slides.map((slide) => slide.role))]
 
 function readUrl() {
   const p = new URLSearchParams(location.search)
+  const slideId = p.get('slide')
+  const deckId = p.get('deck')
+  const selectedSlide = slideId && slides.some((slide) => slide.id === slideId) ? slideId : ''
+  const selectedDeck = deckId && deckById.has(deckId) && slides.some((slide) => slide.deckId === deckId) ? deckId : ''
   return {
     query: p.get('q') ?? '',
     resultType: p.get('view') === 'decks' ? 'decks' as ResultType : 'slides' as ResultType,
     sort: p.get('sort') === 'newest' ? 'newest' : 'default',
     filters: { category: p.get('category') ?? '', author: p.get('author') ?? '', year: p.get('year') ?? '', role: p.get('role') ?? '' },
-    selected: p.get('slide') ?? p.get('deck') ?? '',
-    selectedType: p.has('deck') ? 'deck' as const : 'slide' as const,
+    selected: selectedSlide || selectedDeck,
+    selectedType: selectedSlide ? 'slide' as const : 'deck' as const,
   }
 }
 
@@ -38,7 +42,7 @@ function FilterControls({ filters, onChange }: { filters: Filters; onChange: (ne
 }
 
 function matches(slide: Slide, query: string, filters: Filters) {
-  const deck = deckById[slide.deckId]
+  const deck = deckById.get(slide.deckId)!
   const haystack = [slide.heading, slide.summary, slide.role, slide.visualType, ...slide.tags, deck.title, ...deck.authors, deck.folder].join(' ').normalize('NFKC').toLocaleLowerCase('ja')
   const words = query.normalize('NFKC').toLocaleLowerCase('ja').trim().split(/\s+/).filter(Boolean)
   return words.every((word) => haystack.includes(word)) &&
@@ -66,7 +70,7 @@ function Detail({ id, kind, overlay, onClose, onSelectSlide }: { id: string; kin
   const shellRef = useRef<HTMLElement>(null)
   const [notice, setNotice] = useState('')
   const slide = kind === 'slide' ? slides.find((item) => item.id === id) : undefined
-  const deck = kind === 'deck' ? deckById[id] : slide ? deckById[slide.deckId] : undefined
+  const deck = kind === 'deck' ? deckById.get(id) : slide ? deckById.get(slide.deckId) : undefined
   const related = deck ? slides.filter((item) => item.deckId === deck.id).sort((a, b) => a.pageNumber - b.pageNumber) : []
 
   useEffect(() => {
@@ -84,7 +88,7 @@ function Detail({ id, kind, overlay, onClose, onSelectSlide }: { id: string; kin
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose, overlay])
 
-  if (!deck) return null
+  if (!deck || (!slide && related.length === 0)) return null
   return <div className={overlay ? 'detail-backdrop' : 'detail-page'} onMouseDown={(e) => { if (overlay && e.target === e.currentTarget) onClose() }}>
     <section ref={shellRef} className="detail-shell" role={overlay ? 'dialog' : undefined} aria-modal={overlay ? true : undefined} aria-label={`${slide?.heading ?? deck.title}の詳細`}>
       <div className="detail-header"><span>Slide Library <b>/</b> {slide ? 'スライド詳細' : '発表資料詳細'}</span><button ref={closeRef} type="button" onClick={onClose}>{overlay ? '閉じる' : '一覧に戻る'} <span aria-hidden="true">×</span></button></div>
@@ -182,7 +186,7 @@ function App() {
   }
 
   const matchedSlides = slides.filter((slide) => matches(slide, query, filters))
-  if (sort === 'newest') matchedSlides.sort((a, b) => deckById[b.deckId].year - deckById[a.deckId].year)
+  if (sort === 'newest') matchedSlides.sort((a, b) => deckById.get(b.deckId)!.year - deckById.get(a.deckId)!.year)
   const matchedDecks = decks.filter((deck) => matchedSlides.some((slide) => slide.deckId === deck.id))
   if (sort === 'newest') matchedDecks.sort((a, b) => b.year - a.year)
   const results = resultType === 'slides' ? matchedSlides : matchedDecks
@@ -194,7 +198,7 @@ function App() {
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
   return <>
-    <div className="app-shell" inert={Boolean(selected && overlay)}>
+    <div className="app-shell" inert={Boolean(selected)}>
       <header className="site-header"><strong>Slide Library</strong></header>
       <main className={`library${sidebarCollapsed ? ' library--sidebar-collapsed' : ''}`}>
         <div className="search-area">
@@ -224,7 +228,7 @@ function App() {
             <div ref={resultScrollRef} className="result-scroll" role="region" aria-label="検索結果の一覧" tabIndex={0}>
               {results.length ? <>
                 <div className="result-grid" style={gridStyle}>
-                  {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById[slide.deckId]} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} onClick={() => open('deck', deck.id)} />)}
+                  {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} onClick={() => open('deck', deck.id)} />)}
                 </div>
                 {visibleCount < results.length && <button type="button" className="load-more" onClick={() => setVisibleCount((count) => count + 6)}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
               </> : <div className="empty-state"><h2>該当する資料がありません</h2><p>検索語を短くするか、条件を外してみてください。</p><button type="button" onClick={() => { setDraft(''); update({ query: '', filters: emptyFilters }) }}>検索をリセット</button></div>}
