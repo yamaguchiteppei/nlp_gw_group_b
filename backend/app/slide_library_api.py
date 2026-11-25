@@ -8,11 +8,18 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from app.page_registry import (
+    load_pages,
+    save_pages,
+    register_document_pages,
+)
+from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/api", tags=["Slide Library"])
 
 DATA_DIR = Path("/data")
 UPLOAD_DIR = DATA_DIR / "uploads"
+PREVIEW_DIR = DATA_DIR / "previews"
 METADATA_FILE = DATA_DIR / "documents.json"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MiB
 
@@ -79,28 +86,6 @@ class DocumentStatus(BaseModel):
     error: str | None = None
 
 
-# 仮データ。DB導入時にリポジトリ層へ置き換える。
-PAGES: dict[str, Page] = {
-    "page-001": Page(
-        id="page-001",
-        documentId="document-001",
-        pageNumber=2,
-        heading="研究背景",
-        summary="研究課題を説明するサンプルページ",
-        tags=["背景"],
-        previewUrl=None,
-        document=DocumentDetail(
-            id="document-001",
-            title="サンプル発表資料",
-            authors=["サンプル著者"],
-            folderPath=["論文読み会", "2025"],
-            fileName="sample.pdf",
-            format="pdf",
-        ),
-    )
-}
-
-
 def validate_pagination(limit: int, offset: int) -> None:
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(
@@ -108,6 +93,13 @@ def validate_pagination(limit: int, offset: int) -> None:
             detail="limit must be 1-100 and offset must be >= 0",
         )
 
+def get_all_pages() -> dict[str, Page]:
+    raw_pages = load_pages()
+
+    return {
+        page_id: Page.model_validate(data)
+        for page_id, data in raw_pages.items()
+    }
 
 def to_summary(page: Page) -> PageSummary:
     return PageSummary.model_validate(page.model_dump())
@@ -131,7 +123,10 @@ def list_pages(
     offset: int = Query(0),
 ):
     validate_pagination(limit, offset)
-    return list_result(list(PAGES.values()), limit, offset)
+
+    pages = get_all_pages()
+
+    return list_result(list(pages.values()), limit, offset)
 
 
 @router.post("/pages/search", response_model=PageSummaryList)
@@ -139,7 +134,7 @@ def search_pages(request: SearchRequest):
     validate_pagination(request.limit, request.offset)
     matched = []
 
-    for page in PAGES.values():
+    for page in get_all_pages().values():
         doc = page.document
         searchable = " ".join(
             [doc.title, *doc.authors, page.heading, page.summary]
@@ -148,11 +143,11 @@ def search_pages(request: SearchRequest):
         if request.query.casefold() not in searchable.casefold():
             continue
 
-        if request.filters.tag is not None:
+        if request.filters.tag:
             if request.filters.tag not in page.tags:
                 continue
 
-        if request.filters.folderPath is not None:
+        if request.filters.folderPath:
             folder = "/".join(doc.folderPath)
             prefix = request.filters.folderPath.strip("/")
             if not (
@@ -167,27 +162,40 @@ def search_pages(request: SearchRequest):
 
 @router.get("/pages/{pageId}", response_model=Page)
 def get_page(pageId: str):
-    page = PAGES.get(pageId)
+    page = get_all_pages().get(pageId)
+
     if page is None:
-        raise HTTPException(status_code=404, detail="Page not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Page not found",
+        )
+
     return page
 
 
 @router.put("/pages/{pageId}/tags", response_model=Page)
 def update_tags(pageId: str, request: TagsRequest):
-    page = PAGES.get(pageId)
-    if page is None:
-        raise HTTPException(status_code=404, detail="Page not found")
+    pages = load_pages()
+
+    if pageId not in pages:
+        raise HTTPException(
+            status_code=404,
+            detail="Page not found",
+        )
 
     tags = [tag.strip() for tag in request.tags]
+
     if any(not tag for tag in tags) or len(tags) != len(set(tags)):
         raise HTTPException(
             status_code=400,
             detail="Tags must be nonempty and unique",
         )
 
-    page.tags = tags
-    return page
+    pages[pageId]["tags"] = tags
+
+    save_pages(pages)
+
+    return Page.model_validate(pages[pageId])
 
 
 def read_documents() -> dict:
@@ -272,3 +280,32 @@ def get_document_status(documentId: str):
         )
 
     return DocumentStatus.model_validate(document)
+
+@router.get("/previews/{documentId}/{fileName}")
+def get_preview(documentId: str, fileName: str):
+    try:
+        uuid.UUID(documentId)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid document ID",
+        )
+
+    if (
+        not fileName.endswith(".png")
+        or not fileName[:-4].isdigit()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid preview filename",
+        )
+
+    path = PREVIEW_DIR / documentId / fileName
+
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Preview not found",
+        )
+
+    return FileResponse(path, media_type="image/png")

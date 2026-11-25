@@ -14,11 +14,27 @@ data/
 storage/
 outputs/
 tmp/
+backend/data/
 
-# Build / cache directories
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+
+# Node.js
 node_modules/
 dist/
 build/
-__pycache__/
-.pytest_cache/
-.venv/
+.vite/
+coverage/
+
+# Temporary files
+*.tmp
+*.bak
