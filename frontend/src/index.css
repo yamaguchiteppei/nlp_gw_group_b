@@ -316,7 +316,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .related-card .slide-artwork { height: auto; aspect-ratio: 16 / 9; }
 .related-card span { display: block; overflow: hidden; padding: 7px 3px; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 
-.registration-shell { min-height: 100dvh; background: #f7f7f7; }
+.registration-shell { height: 100dvh; min-height: 0; overflow-y: auto; background: #f7f7f7; }
 .registration-main { width: min(860px, 100%); margin: 0 auto; padding: 50px 24px 80px; }
 .registration-main h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -.04em; }
 .registration-demo-note { margin: 13px 0 30px; padding: 10px 13px; border-left: 2px solid #777; background: #ededed; color: #555; font-size: 13px; line-height: 1.6; }

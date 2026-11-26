@@ -155,7 +155,7 @@ function App() {
   }
 
   useEffect(() => {
-    const onPop = () => { const state = readUrl(); setRegistrationOpen(location.pathname === '/register'); setResultType(state.resultType); setQuery(state.query); setDraft(state.query); setFilters(state.filters); setSort(state.sort); setSelected(state.selected); setSelectedType(state.selectedType); setOverlay(Boolean(history.state?.background)); if (!state.selected && location.pathname !== '/register') requestAnimationFrame(() => { resultScrollRef.current?.scrollTo(0, scrollRef.current.results); window.scrollTo(0, scrollRef.current.page); triggerRef.current?.focus({ preventScroll: true }) }) }
+    const onPop = () => { const state = readUrl(); setRegistrationOpen(location.pathname === '/register'); setResultType(state.resultType); setQuery(state.query); setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query); setFilters(state.filters); setSort(state.sort); setSelected(state.selected); setSelectedType(state.selectedType); setOverlay(Boolean(history.state?.background)); if (!state.selected && location.pathname !== '/register') requestAnimationFrame(() => { resultScrollRef.current?.scrollTo(0, scrollRef.current.results); window.scrollTo(0, scrollRef.current.page); const target = triggerRef.current?.isConnected ? triggerRef.current : document.querySelector<HTMLButtonElement>('.header-register'); target?.focus({ preventScroll: true }) }) }
     addEventListener('popstate', onPop)
     return () => removeEventListener('popstate', onPop)
   }, [])
@@ -189,12 +189,13 @@ function App() {
   const openRegistration = () => {
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
+    history.replaceState({ ...(history.state ?? {}), draft }, '', location.href)
     history.pushState({ registrationBackground: location.href }, '', '/register')
     setRegistrationOpen(true)
   }
   const closeRegistration = () => {
     if (history.state?.registrationBackground) history.back()
-    else { history.replaceState(null, '', '/'); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
+    else { const params = new URLSearchParams(location.search); params.delete('demo'); params.delete('slide'); params.delete('deck'); history.replaceState(null, '', `/${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
   }
 
   const matchedSlides = slides.filter((slide) => matches(slide, query, filters))

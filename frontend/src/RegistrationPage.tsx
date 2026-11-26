@@ -8,7 +8,7 @@ type FormValues = { title: string; authors: string; category: string; year: stri
 const emptyValues: FormValues = { title: '', authors: '', category: '', year: '', folderPath: '' }
 
 function titleFromFilename(filename: string) {
-  return filename.replace(/\.(pptx|pdf)$/i, '').replace(/[_-]+/g, ' ').trim()
+  return filename.replace(/\.(pptx|pdf)$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 200)
 }
 
 function formatSize(bytes: number) {
@@ -27,9 +27,6 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
   useEffect(() => () => taskRef.current?.abort(), [])
 
   const rejectFile = (message: string) => {
-    setFile(null)
-    setValues(emptyValues)
-    setPhase('editing')
     setError(message)
     if (inputRef.current) inputRef.current.value = ''
   }
