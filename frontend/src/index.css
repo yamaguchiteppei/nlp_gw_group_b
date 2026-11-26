@@ -74,15 +74,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:
 
 .results-frame {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: 30px;
+  grid-template-columns: clamp(250px, 21vw, 280px) minmax(0, 1fr);
+  gap: 24px;
   min-height: 0;
   border-top: 1px solid #bdbdbd;
 }
 .library--sidebar-collapsed .results-frame { grid-template-columns: 90px minmax(0, 1fr); }
 .filter-sidebar {
   min-height: 0;
-  padding: 24px 22px 0 0;
+  padding: 24px 18px 0 0;
   border-right: 1px solid #dadada;
 }
 .filter-sidebar--collapsed { padding-right: 0; }
