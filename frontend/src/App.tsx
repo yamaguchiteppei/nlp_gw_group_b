@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { flushSync } from 'react-dom'
 import { SlideArtwork } from './SlideArtwork'
 import { RegistrationPage } from './RegistrationPage'
+import { VisualDirectionSwitch } from './VisualDirectionSwitch'
 import { deckById, decks, slides, type Deck, type Slide } from './mockData'
 
 type ResultType = 'slides' | 'decks'
@@ -9,6 +11,14 @@ const emptyFilters: Filters = { category: '', author: '', year: '', role: '' }
 const authors = [...new Set(decks.flatMap((deck) => deck.authors))].sort((a, b) => a.localeCompare(b, 'ja'))
 const years = [...new Set(decks.map((deck) => deck.year))].sort((a, b) => b - a)
 const roles = [...new Set(slides.map((slide) => slide.role))]
+
+function runViewTransition(change: () => void) {
+  if (!['shared', 'fade'].includes(document.documentElement.dataset.motion ?? '') || !document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    change()
+    return
+  }
+  document.startViewTransition(() => flushSync(change))
+}
 
 function readUrl() {
   const p = new URLSearchParams(location.search)
@@ -56,7 +66,7 @@ function matches(slide: Slide, query: string, filters: Filters) {
 function ResultCard({ slide, deck, onClick }: { slide?: Slide; deck: Deck; onClick: () => void }) {
   const imageSlide = slide ?? slides.find((item) => item.deckId === deck.id)!
   return <button type="button" className="result-card" onClick={onClick} aria-label={`${slide?.heading ?? deck.title}の詳細を開く`}>
-    <div className="thumbnail"><SlideArtwork slide={imageSlide} /></div>
+    <div className="thumbnail" style={{ viewTransitionName: slide ? `slide-${slide.id}` : `deck-${deck.id}` }}><SlideArtwork slide={imageSlide} /></div>
     <div className="card-copy">
       <div className="card-heading">{slide?.heading ?? deck.title}</div>
       <div className="card-deck" title={slide ? deck.title : deck.category}>{slide ? deck.title : deck.category}</div>
@@ -94,7 +104,7 @@ function Detail({ id, kind, overlay, onClose, onSelectSlide }: { id: string; kin
     <section ref={shellRef} className="detail-shell" role={overlay ? 'dialog' : undefined} aria-modal={overlay ? true : undefined} aria-label={`${slide?.heading ?? deck.title}の詳細`}>
       <div className="detail-header"><span>Slide Library <b>/</b> {slide ? 'スライド詳細' : '発表資料詳細'}</span><button ref={closeRef} type="button" onClick={onClose}>{overlay ? '閉じる' : '一覧に戻る'} <span aria-hidden="true">×</span></button></div>
       <div className="detail-main">
-        <div className="detail-visual"><div className="detail-artwork"><SlideArtwork slide={slide ?? related[0]} /></div>
+        <div className="detail-visual"><div className="detail-artwork" style={{ viewTransitionName: slide ? `slide-${slide.id}` : `deck-${deck.id}` }}><SlideArtwork slide={slide ?? related[0]} /></div>
           {slide && <div className="slide-navigation"><span>同じ資料の前後のページ</span><div>
             <button type="button" disabled={related.indexOf(slide) === 0} onClick={() => onSelectSlide(related[related.indexOf(slide) - 1].id)}>前へ</button>
             <button type="button" disabled={related.indexOf(slide) === related.length - 1} onClick={() => onSelectSlide(related[related.indexOf(slide) + 1].id)}>次へ</button>
@@ -145,17 +155,38 @@ function App() {
   }
 
   const update = (next: { resultType?: ResultType; query?: string; filters?: Filters; sort?: string }) => {
-    if (next.resultType) setResultType(next.resultType)
-    if (next.query !== undefined) setQuery(next.query)
-    if (next.filters) setFilters(next.filters)
-    if (next.sort) setSort(next.sort)
-    setVisibleCount(6)
-    if (next.query !== undefined || next.filters || next.resultType || next.sort) resultScrollRef.current?.scrollTo(0, 0)
-    history.replaceState(null, '', makeUrl(next))
+    runViewTransition(() => {
+      if (next.resultType) setResultType(next.resultType)
+      if (next.query !== undefined) setQuery(next.query)
+      if (next.filters) setFilters(next.filters)
+      if (next.sort) setSort(next.sort)
+      setVisibleCount(6)
+      if (next.query !== undefined || next.filters || next.resultType || next.sort) resultScrollRef.current?.scrollTo(0, 0)
+      history.replaceState(null, '', makeUrl(next))
+    })
   }
 
   useEffect(() => {
-    const onPop = () => { const state = readUrl(); setRegistrationOpen(location.pathname === '/register'); setResultType(state.resultType); setQuery(state.query); setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query); setFilters(state.filters); setSort(state.sort); setSelected(state.selected); setSelectedType(state.selectedType); setOverlay(Boolean(history.state?.background)); if (!state.selected && location.pathname !== '/register') requestAnimationFrame(() => { resultScrollRef.current?.scrollTo(0, scrollRef.current.results); window.scrollTo(0, scrollRef.current.page); const target = triggerRef.current?.isConnected ? triggerRef.current : document.querySelector<HTMLButtonElement>('.header-register'); target?.focus({ preventScroll: true }) }) }
+    const onPop = () => {
+      const state = readUrl()
+      runViewTransition(() => {
+        setRegistrationOpen(location.pathname === '/register')
+        setResultType(state.resultType)
+        setQuery(state.query)
+        setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query)
+        setFilters(state.filters)
+        setSort(state.sort)
+        setSelected(state.selected)
+        setSelectedType(state.selectedType)
+        setOverlay(Boolean(history.state?.background))
+      })
+      if (!state.selected && location.pathname !== '/register') requestAnimationFrame(() => {
+        resultScrollRef.current?.scrollTo(0, scrollRef.current.results)
+        window.scrollTo(0, scrollRef.current.page)
+        const target = triggerRef.current?.isConnected ? triggerRef.current : document.querySelector<HTMLButtonElement>('.header-register')
+        target?.focus({ preventScroll: true })
+      })
+    }
     addEventListener('popstate', onPop)
     return () => removeEventListener('popstate', onPop)
   }, [])
@@ -174,17 +205,15 @@ function App() {
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
     const p = new URLSearchParams(location.search); p.delete('slide'); p.delete('deck'); p.set(kind, id)
-    history.pushState({ background: location.href }, '', `${location.pathname}?${p}`)
-    setSelected(id); setSelectedType(kind); setOverlay(true)
+    runViewTransition(() => { history.pushState({ background: location.href }, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType(kind); setOverlay(true) })
   }
   const close = () => {
     if (overlay && history.state?.background) history.back()
-    else { const p = new URLSearchParams(location.search); p.delete('slide'); p.delete('deck'); history.replaceState(null, '', `${location.pathname}${p.size ? `?${p}` : ''}`); setSelected(''); setOverlay(false) }
+    else { const p = new URLSearchParams(location.search); p.delete('slide'); p.delete('deck'); runViewTransition(() => { history.replaceState(null, '', `${location.pathname}${p.size ? `?${p}` : ''}`); setSelected(''); setOverlay(false) }) }
   }
   const selectRelated = (id: string) => {
     const p = new URLSearchParams(location.search); p.delete('deck'); p.set('slide', id)
-    history.replaceState(history.state, '', `${location.pathname}?${p}`)
-    setSelected(id); setSelectedType('slide')
+    runViewTransition(() => { history.replaceState(history.state, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType('slide') })
   }
   const openRegistration = () => {
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -210,7 +239,7 @@ function App() {
   const effectiveColumns = Math.min(preferredColumns, maxColumns)
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
-  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} />
+  if (registrationOpen) return <><RegistrationPage onBack={closeRegistration} /><VisualDirectionSwitch /></>
 
   return <>
     <div className="app-shell" inert={Boolean(selected)}>
@@ -225,7 +254,7 @@ function App() {
         </div>
         <div className="results-frame">
           <aside className={`filter-sidebar${sidebarCollapsed ? ' filter-sidebar--collapsed' : ''}`} aria-label="絞り込み">
-            <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'フィルタを開く' : 'フィルタを閉じる'} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? 'フィルタ ›' : 'フィルタ ‹'}</button>
+            <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'フィルタを開く' : 'フィルタを閉じる'} aria-expanded={!sidebarCollapsed} onClick={() => runViewTransition(() => setSidebarCollapsed((value) => !value))}>{sidebarCollapsed ? 'フィルタ ›' : 'フィルタ ‹'}</button>
             {!sidebarCollapsed && <FilterControls filters={filters} onChange={(next) => update({ filters: next })} />}
           </aside>
           <section ref={resultsSectionRef} className="results-section" aria-label="検索結果">
@@ -235,7 +264,7 @@ function App() {
                 <button type="button" role="tab" aria-selected={resultType === 'decks'} onClick={() => update({ resultType: 'decks' })}>発表資料 <span>{matchedDecks.length}</span></button>
               </div>
               <div className="results-actions">
-                {maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count }))}>{count}</button>)}</div>}
+                {maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => runViewTransition(() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count })))}>{count}</button>)}</div>}
                 <label className="sort-field"><span className="sr-only">並び順</span><select value={sort} onChange={(e) => update({ sort: e.target.value })}><option value="default">資料内の順</option><option value="newest">発表年の新しい順</option></select></label>
               </div>
             </div>
@@ -245,7 +274,7 @@ function App() {
                 <div className="result-grid" style={gridStyle}>
                   {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} onClick={() => open('deck', deck.id)} />)}
                 </div>
-                {visibleCount < results.length && <button type="button" className="load-more" onClick={() => setVisibleCount((count) => count + 6)}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
+                {visibleCount < results.length && <button type="button" className="load-more" onClick={() => runViewTransition(() => setVisibleCount((count) => count + 6))}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
               </> : <div className="empty-state"><h2>該当する資料がありません</h2><p>検索語を短くするか、条件を外してみてください。</p><button type="button" onClick={() => { setDraft(''); update({ query: '', filters: emptyFilters }) }}>検索をリセット</button></div>}
             </div>
           </section>
@@ -253,6 +282,7 @@ function App() {
       </main>
     </div>
     {selected && <Detail key={`${selectedType}-${selected}`} id={selected} kind={selectedType} overlay={overlay} onClose={close} onSelectSlide={selectRelated} />}
+    <VisualDirectionSwitch />
   </>
 }
 
