@@ -12,12 +12,12 @@ const authors = [...new Set(decks.flatMap((deck) => deck.authors))].sort((a, b) 
 const years = [...new Set(decks.map((deck) => deck.year))].sort((a, b) => b - a)
 const roles = [...new Set(slides.map((slide) => slide.role))]
 
-function runViewTransition(change: () => void) {
+function runViewTransition(change: () => void): Promise<void> {
   if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    change()
-    return
+    flushSync(change)
+    return Promise.resolve()
   }
-  document.startViewTransition(() => flushSync(change))
+  return document.startViewTransition(() => flushSync(change)).updateCallbackDone
 }
 
 function readUrl() {
@@ -63,10 +63,11 @@ function matches(slide: Slide, query: string, filters: Filters) {
     (!filters.role || slide.role === filters.role)
 }
 
-function ResultCard({ slide, deck, onClick }: { slide?: Slide; deck: Deck; onClick: () => void }) {
+function ResultCard({ slide, deck, onClick, activeTransitionName }: { slide?: Slide; deck: Deck; onClick: () => void; activeTransitionName: string }) {
   const imageSlide = slide ?? slides.find((item) => item.deckId === deck.id)!
+  const transitionName = slide ? `slide-${slide.id}` : `deck-${deck.id}`
   return <button type="button" className="result-card" onClick={onClick} aria-label={`${slide?.heading ?? deck.title}の詳細を開く`}>
-    <div className="thumbnail" style={{ viewTransitionName: slide ? `slide-${slide.id}` : `deck-${deck.id}` }}><SlideArtwork slide={imageSlide} /></div>
+    <div className="thumbnail" style={{ viewTransitionName: activeTransitionName === transitionName ? transitionName : 'none' }}><SlideArtwork slide={imageSlide} /></div>
     <div className="card-copy">
       <div className="card-heading">{slide?.heading ?? deck.title}</div>
       <div className="card-deck" title={slide ? deck.title : deck.category}>{slide ? deck.title : deck.category}</div>
@@ -137,6 +138,7 @@ function App() {
   const [visibleCount, setVisibleCount] = useState(6)
   const [selected, setSelected] = useState(initial.selected)
   const [selectedType, setSelectedType] = useState(initial.selectedType)
+  const [activeTransitionName, setActiveTransitionName] = useState(initial.selected ? `${initial.selectedType}-${initial.selected}` : '')
   const [overlay, setOverlay] = useState(Boolean(history.state?.background))
   const [registrationOpen, setRegistrationOpen] = useState(location.pathname === '/register')
   const triggerRef = useRef<HTMLElement | null>(null)
@@ -167,7 +169,7 @@ function App() {
   useEffect(() => {
     const onPop = () => {
       const state = readUrl()
-      runViewTransition(() => {
+      void runViewTransition(() => {
         setRegistrationOpen(location.pathname === '/register')
         setResultType(state.resultType)
         setQuery(state.query)
@@ -177,12 +179,14 @@ function App() {
         setSelected(state.selected)
         setSelectedType(state.selectedType)
         setOverlay(Boolean(history.state?.background))
-      })
-      if (!state.selected && location.pathname !== '/register') requestAnimationFrame(() => {
-        resultScrollRef.current?.scrollTo(0, scrollRef.current.results)
-        window.scrollTo(0, scrollRef.current.page)
-        const target = triggerRef.current?.isConnected ? triggerRef.current : document.querySelector<HTMLButtonElement>('.header-register')
-        target?.focus({ preventScroll: true })
+      }).then(() => {
+        if (state.selected || location.pathname === '/register') return
+        requestAnimationFrame(() => {
+          resultScrollRef.current?.scrollTo(0, scrollRef.current.results)
+          window.scrollTo(0, scrollRef.current.page)
+          const target = triggerRef.current?.isConnected ? triggerRef.current : document.querySelector<HTMLButtonElement>('.header-register')
+          target?.focus({ preventScroll: true })
+        })
       })
     }
     addEventListener('popstate', onPop)
@@ -203,7 +207,8 @@ function App() {
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
     const p = new URLSearchParams(location.search); p.delete('slide'); p.delete('deck'); p.set(kind, id)
-    runViewTransition(() => { history.pushState({ background: location.href }, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType(kind); setOverlay(true) })
+    flushSync(() => setActiveTransitionName(`${kind}-${id}`))
+    void runViewTransition(() => { history.pushState({ background: location.href }, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType(kind); setOverlay(true) })
   }
   const close = () => {
     if (overlay && history.state?.background) history.back()
@@ -211,7 +216,8 @@ function App() {
   }
   const selectRelated = (id: string) => {
     const p = new URLSearchParams(location.search); p.delete('deck'); p.set('slide', id)
-    runViewTransition(() => { history.replaceState(history.state, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType('slide') })
+    flushSync(() => setActiveTransitionName(`slide-${id}`))
+    void runViewTransition(() => { history.replaceState(history.state, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType('slide') })
   }
   const openRegistration = () => {
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -270,7 +276,7 @@ function App() {
             <div ref={resultScrollRef} className="result-scroll" role="region" aria-label="検索結果の一覧" tabIndex={0}>
               {results.length ? <>
                 <div className="result-grid" style={gridStyle}>
-                  {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} onClick={() => open('deck', deck.id)} />)}
+                  {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} activeTransitionName={activeTransitionName} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} activeTransitionName={activeTransitionName} onClick={() => open('deck', deck.id)} />)}
                 </div>
                 {visibleCount < results.length && <button type="button" className="load-more" onClick={() => setVisibleCount((count) => count + 6)}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
               </> : <div className="empty-state"><img className="mascot mascot--empty" src="/slide-mascot.png" alt="" /><h2>該当する資料がありません</h2><p>検索語を短くするか、条件を外してみてください。</p><button type="button" onClick={() => { setDraft(''); update({ query: '', filters: emptyFilters }) }}>検索をリセット</button></div>}
