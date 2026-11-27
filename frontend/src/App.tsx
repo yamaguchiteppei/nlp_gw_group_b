@@ -53,12 +53,14 @@ function SearchSkeleton({ gridStyle }: { gridStyle: CSSProperties }) {
   </div>
 }
 
-function SearchMessage({ kind, onRetry }: { kind: 'empty' | 'error'; onRetry?: () => void }) {
-  const failed = kind === 'error'
+type SearchMessageProps = { kind: 'empty' } | { kind: 'error'; onRetry: () => void }
+
+function SearchMessage(props: SearchMessageProps) {
+  const failed = props.kind === 'error'
   return <div className="search-message" role={failed ? 'alert' : 'status'}>
     <img className="mascot mascot--message" src={failed ? '/slide-mascot-error.png' : '/slide-mascot-empty.png'} alt="" />
     <h2>{failed ? 'スライドを読み込めませんでした' : '資料がありません'}</h2>
-    {failed && <><p>検索条件は保持されています。接続を確認して再試行してください。</p><button type="button" onClick={onRetry}>再試行</button></>}
+    {props.kind === 'error' && <><p>検索条件は保持されています。接続を確認して再試行してください。</p><button type="button" onClick={props.onRetry}>再試行</button></>}
   </div>
 }
 
@@ -198,8 +200,14 @@ function App() {
 
   const beginSearch = (nextQuery?: string) => {
     window.clearTimeout(searchTimerRef.current)
+    if (nextQuery !== undefined) {
+      setQuery(nextQuery)
+      setVisibleCount(6)
+      resultScrollRef.current?.scrollTo(0, 0)
+    }
+    history.replaceState(null, '', makeUrl(nextQuery === undefined ? {} : { query: nextQuery }))
     setSearchStatus('loading')
-    searchTimerRef.current = window.setTimeout(() => update(nextQuery === undefined ? {} : { query: nextQuery }), 500)
+    searchTimerRef.current = window.setTimeout(() => setSearchStatus('ready'), 500)
   }
 
   useEffect(() => () => window.clearTimeout(searchTimerRef.current), [])
