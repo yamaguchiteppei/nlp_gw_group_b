@@ -47,9 +47,10 @@
 .registration-dropzone { border: 1px solid var(--visual-line); box-shadow: 3px 3px 0 var(--visual-shadow); }
 
 .mascot { display: block; object-fit: contain; }
-.mascot--empty { width: 156px; height: 102px; margin: 0 auto 16px; }
+.mascot--message { width: min(235px, 75vw); height: auto; margin: 0 auto 12px; animation: mascot-arrive 280ms ease-out both; }
 .mascot--progress { width: 116px; height: 80px; flex: none; animation: mascot-float 1.6s ease-in-out infinite alternate; }
 @keyframes mascot-float { to { transform: translateY(-4px); } }
+@keyframes mascot-arrive { from { opacity: 0; transform: translateY(6px) rotate(-3deg); } to { opacity: 1; transform: translateY(0) rotate(0); } }
 
 .app-shell[inert] .thumbnail { view-transition-name: none !important; }
 ::view-transition-group(*) { animation-duration: 360ms; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
@@ -63,5 +64,5 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .result-card:hover .thumbnail, .result-card:focus-visible .thumbnail { transform: none; }
-  .mascot--progress { animation: none; }
+  .mascot--progress, .mascot--message, .result-skeleton-image, .result-skeleton-title, .result-skeleton-meta { animation: none; }
 }
