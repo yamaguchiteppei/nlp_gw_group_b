@@ -6,6 +6,7 @@ import { Brand } from './Brand'
 import { deckById, decks, slides, type Deck, type Slide } from './mockData'
 
 type ResultType = 'slides' | 'decks'
+type SearchStatus = 'ready' | 'loading' | 'error'
 type Filters = { category: string; author: string; year: string; role: string }
 const emptyFilters: Filters = { category: '', author: '', year: '', role: '' }
 const authors = [...new Set(decks.flatMap((deck) => deck.authors))].sort((a, b) => a.localeCompare(b, 'ja'))
@@ -22,6 +23,8 @@ function runViewTransition(change: () => void): Promise<void> {
 
 function readUrl() {
   const p = new URLSearchParams(location.search)
+  const demo = p.get('demo')
+  const searchStatus: SearchStatus = demo === 'loading' || demo === 'error' ? demo : 'ready'
   const slideId = p.get('slide')
   const deckId = p.get('deck')
   const selectedSlide = slideId && slides.some((slide) => slide.id === slideId) ? slideId : ''
@@ -33,7 +36,30 @@ function readUrl() {
     filters: { category: p.get('category') ?? '', author: p.get('author') ?? '', year: p.get('year') ?? '', role: p.get('role') ?? '' },
     selected: selectedSlide || selectedDeck,
     selectedType: selectedSlide ? 'slide' as const : 'deck' as const,
+    searchStatus,
   }
+}
+
+function SearchSkeleton({ gridStyle }: { gridStyle: CSSProperties }) {
+  return <div className="search-loading" role="status" aria-live="polite">
+    <span className="search-loading-label">検索中…</span>
+    <div className="result-grid" style={gridStyle} aria-hidden="true">
+      {Array.from({ length: 6 }, (_, index) => <div className="result-skeleton" key={index}>
+        <div className="result-skeleton-image" />
+        <div className="result-skeleton-title" />
+        <div className="result-skeleton-meta" />
+      </div>)}
+    </div>
+  </div>
+}
+
+function SearchMessage({ kind, onRetry }: { kind: 'empty' | 'error'; onRetry?: () => void }) {
+  const failed = kind === 'error'
+  return <div className="search-message" role={failed ? 'alert' : 'status'}>
+    <img className="mascot mascot--message" src={failed ? '/slide-mascot-error.png' : '/slide-mascot-empty.png'} alt="" />
+    <h2>{failed ? 'スライドを読み込めませんでした' : '資料がありません'}</h2>
+    {failed && <><p>検索条件は保持されています。接続を確認して再試行してください。</p><button type="button" onClick={onRetry}>再試行</button></>}
+  </div>
 }
 
 function FilterControls({ filters, onChange }: { filters: Filters; onChange: (next: Filters) => void }) {
@@ -132,6 +158,7 @@ function App() {
   const [draft, setDraft] = useState(initial.query)
   const [filters, setFilters] = useState<Filters>(initial.filters)
   const [sort, setSort] = useState(initial.sort)
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>(initial.searchStatus)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [gridColumns, setGridColumns] = useState({ expanded: 2, collapsed: 3 })
   const [resultsWidth, setResultsWidth] = useState(0)
@@ -145,6 +172,7 @@ function App() {
   const scrollRef = useRef({ page: 0, results: 0 })
   const resultScrollRef = useRef<HTMLDivElement>(null)
   const resultsSectionRef = useRef<HTMLElement>(null)
+  const searchTimerRef = useRef<number | undefined>(undefined)
 
   const makeUrl = (next: { resultType?: ResultType; query?: string; filters?: Filters; sort?: string } = {}) => {
     const value = { resultType, query, filters, sort, ...next }
@@ -157,6 +185,8 @@ function App() {
   }
 
   const update = (next: { resultType?: ResultType; query?: string; filters?: Filters; sort?: string }) => {
+    window.clearTimeout(searchTimerRef.current)
+    setSearchStatus('ready')
     if (next.resultType) setResultType(next.resultType)
     if (next.query !== undefined) setQuery(next.query)
     if (next.filters) setFilters(next.filters)
@@ -166,8 +196,17 @@ function App() {
     history.replaceState(null, '', makeUrl(next))
   }
 
+  const beginSearch = (nextQuery?: string) => {
+    window.clearTimeout(searchTimerRef.current)
+    setSearchStatus('loading')
+    searchTimerRef.current = window.setTimeout(() => update(nextQuery === undefined ? {} : { query: nextQuery }), 500)
+  }
+
+  useEffect(() => () => window.clearTimeout(searchTimerRef.current), [])
+
   useEffect(() => {
     const onPop = () => {
+      window.clearTimeout(searchTimerRef.current)
       const state = readUrl()
       void runViewTransition(() => {
         setRegistrationOpen(location.pathname === '/register')
@@ -176,6 +215,7 @@ function App() {
         setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query)
         setFilters(state.filters)
         setSort(state.sort)
+        setSearchStatus(state.searchStatus)
         setSelected(state.selected)
         setSelectedType(state.selectedType)
         setOverlay(Boolean(history.state?.background))
@@ -220,6 +260,7 @@ function App() {
     void runViewTransition(() => { history.replaceState(history.state, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType('slide') })
   }
   const openRegistration = () => {
+    window.clearTimeout(searchTimerRef.current)
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
     history.replaceState({ ...(history.state ?? {}), draft }, '', location.href)
@@ -250,7 +291,7 @@ function App() {
       <header className="site-header"><Brand /><button type="button" className="header-register" onClick={openRegistration}>資料を登録</button></header>
       <main className={`library${sidebarCollapsed ? ' library--sidebar-collapsed' : ''}`}>
         <div className="search-area">
-          <form className="search-form" role="search" onSubmit={(e) => { e.preventDefault(); update({ query: draft }) }}>
+          <form className="search-form" role="search" onSubmit={(e) => { e.preventDefault(); beginSearch(draft) }}>
             <label htmlFor="library-query" className="sr-only">内容・著者・資料名を検索</label>
             <input id="library-query" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="スライドの内容・著者・資料名を検索" />
             <button type="submit">検索</button>
@@ -264,8 +305,8 @@ function App() {
           <section ref={resultsSectionRef} className="results-section" aria-label="検索結果">
             <div className="results-toolbar">
               <div className="result-tabs" role="tablist" aria-label="検索結果の種類">
-                <button type="button" role="tab" aria-selected={resultType === 'slides'} onClick={() => update({ resultType: 'slides' })}>スライド <span>{matchedSlides.length}</span></button>
-                <button type="button" role="tab" aria-selected={resultType === 'decks'} onClick={() => update({ resultType: 'decks' })}>発表資料 <span>{matchedDecks.length}</span></button>
+                <button type="button" role="tab" aria-selected={resultType === 'slides'} onClick={() => update({ resultType: 'slides' })}>スライド {searchStatus === 'ready' && <span>{matchedSlides.length}</span>}</button>
+                <button type="button" role="tab" aria-selected={resultType === 'decks'} onClick={() => update({ resultType: 'decks' })}>発表資料 {searchStatus === 'ready' && <span>{matchedDecks.length}</span>}</button>
               </div>
               <div className="results-actions">
                 {maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count }))}>{count}</button>)}</div>}
@@ -273,13 +314,13 @@ function App() {
               </div>
             </div>
             {activeFilters.length > 0 && <div className="active-row">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => update({ filters: { ...filters, [key]: '' } })}>{filterLabels[key]}: {value} <span aria-hidden="true">×</span></button>)}<button type="button" className="clear-button" onClick={() => update({ filters: emptyFilters })}>条件を解除</button></div>}
-            <div ref={resultScrollRef} className="result-scroll" role="region" aria-label="検索結果の一覧" tabIndex={0}>
-              {results.length ? <>
+            <div ref={resultScrollRef} className="result-scroll" role="region" aria-label="検索結果の一覧" aria-busy={searchStatus === 'loading'} tabIndex={0}>
+              {searchStatus === 'loading' ? <SearchSkeleton gridStyle={gridStyle} /> : searchStatus === 'error' ? <SearchMessage kind="error" onRetry={() => beginSearch()} /> : results.length ? <>
                 <div className="result-grid" style={gridStyle}>
                   {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} activeTransitionName={activeTransitionName} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} activeTransitionName={activeTransitionName} onClick={() => open('deck', deck.id)} />)}
                 </div>
                 {visibleCount < results.length && <button type="button" className="load-more" onClick={() => setVisibleCount((count) => count + 6)}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
-              </> : <div className="empty-state"><img className="mascot mascot--empty" src="/slide-mascot.png" alt="" /><h2>該当する資料がありません</h2><p>検索語を短くするか、条件を外してみてください。</p><button type="button" onClick={() => { setDraft(''); update({ query: '', filters: emptyFilters }) }}>検索をリセット</button></div>}
+              </> : <SearchMessage kind="empty" />}
             </div>
           </section>
         </div>
