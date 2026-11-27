@@ -9,10 +9,10 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .35; }
-button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .result-scroll:focus-visible {
   outline: 2px solid #4a4a4a;
   outline-offset: 2px;
 }
@@ -32,9 +32,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:
   border-bottom: 1px solid #d9d9d9;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   background: #fff;
 }
 .site-header strong { font-size: 19px; letter-spacing: -.03em; }
+.header-register, .registration-header button {
+  padding: 8px 13px;
+  border: 1px solid #bcbcbc;
+  background: #fff;
+  color: #333;
+  font-size: 13px;
+}
+.header-register:hover, .registration-header button:hover { background: #f0f0f0; }
 .library {
   width: 100%;
   max-width: 1640px;
@@ -306,6 +315,74 @@ button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:
 .related-card.is-current { border-color: #555; }
 .related-card .slide-artwork { height: auto; aspect-ratio: 16 / 9; }
 .related-card span { display: block; overflow: hidden; padding: 7px 3px; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+
+.registration-shell { height: 100dvh; min-height: 0; overflow-y: auto; background: #f7f7f7; }
+.registration-main { width: min(860px, 100%); margin: 0 auto; padding: 50px 24px 80px; }
+.registration-main h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -.04em; }
+.registration-demo-note { margin: 13px 0 30px; padding: 10px 13px; border-left: 2px solid #777; background: #ededed; color: #555; font-size: 13px; line-height: 1.6; }
+.registration-section { border-top: 1px solid #ccc; }
+.registration-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  min-height: 132px;
+  padding: 24px;
+  border-bottom: 1px solid #ccc;
+  background: #fff;
+}
+.registration-dropzone.is-dragging { outline: 2px solid #555; outline-offset: -4px; background: #ececec; }
+.registration-dropzone:focus-within { outline: 2px solid #555; outline-offset: -4px; }
+.registration-dropzone > div { min-width: 0; }
+.registration-dropzone strong, .registration-dropzone span { display: block; overflow-wrap: anywhere; }
+.registration-dropzone strong { font-size: 16px; font-weight: 650; }
+.registration-dropzone span { margin-top: 8px; color: #777; font-size: 13px; }
+.registration-dropzone button, .registration-actions button {
+  flex: none;
+  padding: 10px 15px;
+  border: 1px solid #aaa;
+  background: #fff;
+  color: #333;
+  font-size: 13px;
+}
+.registration-dropzone button:hover, .registration-actions button:hover { background: #ededed; }
+.registration-error { margin: 18px 0 0; padding: 11px 13px; border-left: 2px solid #9a5555; background: #f5eeee; color: #713d3d; font-size: 13px; line-height: 1.6; }
+.registration-form { margin-top: 35px; }
+.registration-form-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #ccc; }
+.registration-form-heading h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.registration-form-heading span { color: #777; font-size: 12px; }
+.registration-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 20px; margin-top: 22px; }
+.registration-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: #444; font-size: 13px; }
+.registration-field--wide { grid-column: 1 / -1; }
+.registration-field b { margin-left: 5px; color: #777; font-size: 11px; font-weight: 400; }
+.registration-field input, .registration-field select, .registration-field textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #bcbcbc;
+  border-radius: 0;
+  background: #fff;
+  color: #252525;
+  font-size: 14px;
+}
+.registration-field textarea { resize: vertical; line-height: 1.5; }
+.registration-field input:disabled, .registration-field select:disabled, .registration-field textarea:disabled { background: #eee; }
+.registration-field small { color: #888; font-size: 11px; }
+.registration-progress { display: flex; align-items: center; gap: 13px; margin-top: 29px; padding: 17px; border: 1px solid #ccc; background: #fff; }
+.registration-progress-mark { width: 11px; height: 11px; flex: none; border: 1px solid #666; border-radius: 50%; background: #777; }
+.registration-progress strong, .registration-progress span { display: block; }
+.registration-progress strong { font-size: 14px; }
+.registration-progress div span { margin-top: 4px; color: #777; font-size: 12px; }
+.registration-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ccc; }
+.registration-actions .registration-primary { border-color: #444; background: #444; color: #fff; }
+.registration-actions .registration-primary:hover { background: #252525; }
+.registration-complete { padding-top: 28px; border-top: 1px solid #ccc; }
+.registration-kicker { margin: 0 0 10px; color: #777; font-size: 12px; }
+.registration-complete h2 { margin: 0; font-size: 22px; font-weight: 650; }
+.registration-complete > p:not(.registration-kicker) { color: #666; font-size: 14px; }
+.registration-complete dl { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 10px 18px; margin: 30px 0; padding: 18px 0; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; font-size: 13px; }
+.registration-complete dt { color: #888; }
+.registration-complete dd { margin: 0; overflow-wrap: anywhere; }
 @keyframes backdrop-enter { from { background: rgba(35, 35, 35, 0); } to { background: rgba(35, 35, 35, .56); } }
 @keyframes detail-enter { from { opacity: .6; transform: scale(.975); } to { opacity: 1; transform: scale(1); } }
 
@@ -359,6 +436,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, .result-scroll:
   .detail-visual { padding: 15px; }
   .detail-header { height: 56px; padding: 0 15px; }
   .related-card { width: 150px; }
+  .registration-main { padding: 30px 19px 60px; }
+  .registration-main h1 { font-size: 23px; }
+  .registration-dropzone { align-items: flex-start; flex-direction: column; gap: 18px; padding: 20px 16px; }
+  .registration-form-heading { display: block; }
+  .registration-form-heading span { display: block; margin-top: 8px; line-height: 1.6; }
+  .registration-fields { grid-template-columns: 1fr; }
+  .registration-field--wide { grid-column: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }

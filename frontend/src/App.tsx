@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { SlideArtwork } from './SlideArtwork'
+import { RegistrationPage } from './RegistrationPage'
 import { deckById, decks, slides, type Deck, type Slide } from './mockData'
 
 type ResultType = 'slides' | 'decks'
@@ -127,6 +128,7 @@ function App() {
   const [selected, setSelected] = useState(initial.selected)
   const [selectedType, setSelectedType] = useState(initial.selectedType)
   const [overlay, setOverlay] = useState(Boolean(history.state?.background))
+  const [registrationOpen, setRegistrationOpen] = useState(location.pathname === '/register')
   const triggerRef = useRef<HTMLElement | null>(null)
   const scrollRef = useRef({ page: 0, results: 0 })
   const resultScrollRef = useRef<HTMLDivElement>(null)
@@ -153,7 +155,7 @@ function App() {
   }
 
   useEffect(() => {
-    const onPop = () => { const state = readUrl(); setResultType(state.resultType); setQuery(state.query); setDraft(state.query); setFilters(state.filters); setSort(state.sort); setSelected(state.selected); setSelectedType(state.selectedType); setOverlay(Boolean(history.state?.background)); if (!state.selected) requestAnimationFrame(() => { resultScrollRef.current?.scrollTo(0, scrollRef.current.results); window.scrollTo(0, scrollRef.current.page); triggerRef.current?.focus({ preventScroll: true }) }) }
+    const onPop = () => { const state = readUrl(); setRegistrationOpen(location.pathname === '/register'); setResultType(state.resultType); setQuery(state.query); setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query); setFilters(state.filters); setSort(state.sort); setSelected(state.selected); setSelectedType(state.selectedType); setOverlay(Boolean(history.state?.background)); if (!state.selected && location.pathname !== '/register') requestAnimationFrame(() => { resultScrollRef.current?.scrollTo(0, scrollRef.current.results); window.scrollTo(0, scrollRef.current.page); const target = triggerRef.current?.isConnected ? triggerRef.current : document.querySelector<HTMLButtonElement>('.header-register'); target?.focus({ preventScroll: true }) }) }
     addEventListener('popstate', onPop)
     return () => removeEventListener('popstate', onPop)
   }, [])
@@ -164,7 +166,7 @@ function App() {
     const observer = new ResizeObserver(() => setResultsWidth(element.clientWidth))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+  }, [registrationOpen])
 
   useEffect(() => { if (selected && overlay) { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = '' } } }, [selected, overlay])
 
@@ -184,6 +186,17 @@ function App() {
     history.replaceState(history.state, '', `${location.pathname}?${p}`)
     setSelected(id); setSelectedType('slide')
   }
+  const openRegistration = () => {
+    triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
+    history.replaceState({ ...(history.state ?? {}), draft }, '', location.href)
+    history.pushState({ registrationBackground: location.href }, '', '/register')
+    setRegistrationOpen(true)
+  }
+  const closeRegistration = () => {
+    if (history.state?.registrationBackground) history.back()
+    else { const params = new URLSearchParams(location.search); params.delete('demo'); params.delete('slide'); params.delete('deck'); history.replaceState(null, '', `/${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
+  }
 
   const matchedSlides = slides.filter((slide) => matches(slide, query, filters))
   if (sort === 'newest') matchedSlides.sort((a, b) => deckById.get(b.deckId)!.year - deckById.get(a.deckId)!.year)
@@ -197,9 +210,11 @@ function App() {
   const effectiveColumns = Math.min(preferredColumns, maxColumns)
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
+  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} />
+
   return <>
     <div className="app-shell" inert={Boolean(selected)}>
-      <header className="site-header"><strong>Slide Library</strong></header>
+      <header className="site-header"><strong>Slide Library</strong><button type="button" className="header-register" onClick={openRegistration}>資料を登録</button></header>
       <main className={`library${sidebarCollapsed ? ' library--sidebar-collapsed' : ''}`}>
         <div className="search-area">
           <form className="search-form" role="search" onSubmit={(e) => { e.preventDefault(); update({ query: draft }) }}>
