@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["Slide Library"])
@@ -272,3 +273,39 @@ def get_document_status(documentId: str):
         )
 
     return DocumentStatus.model_validate(document)
+
+
+@router.get(
+    "/documents/{documentId}/source",
+    responses={404: {"description": "Document or source file not found"}},
+)
+def download_document_source(documentId: str) -> FileResponse:
+    document = read_documents().get(documentId)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    source_format = document.get("format")
+    media_types = {
+        "pdf": "application/pdf",
+        "pptx": (
+            "application/vnd.openxmlformats-officedocument."
+            "presentationml.presentation"
+        ),
+    }
+    saved_path = document.get("savedPath")
+    if source_format not in media_types or not saved_path:
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    source_path = Path(saved_path).resolve()
+    if (
+        not source_path.is_relative_to(UPLOAD_DIR.resolve())
+        or not source_path.is_file()
+    ):
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    return FileResponse(
+        source_path,
+        media_type=media_types[source_format],
+        filename=Path(document["fileName"]).name,
+        content_disposition_type="attachment",
+    )

@@ -111,11 +111,12 @@ APIでいうページは、PDF/PPTXの1ページを表すスライド資産で�
 | --- | --- | --- |
 | `POST /api/documents` | PDF/PPTXと登録情報 | `202` と資料ID・取込状態 |
 | `GET /api/documents/{documentId}` | 資料ID | `200` と取込状態・結果。存在しなければ `404` |
+| `GET /api/documents/{documentId}/source` | 資料ID | `200` と登録したPDF/PPTX全体を添付ファイルとして返す。資料や元ファイルがなければ `404` |
 
-## 解析情報と元ファイルの参照（後続段階）
+## 解析情報と元ファイルの参照
 
 候補の表現・構成をエージェントが理解できるよう、`GET /api/pages/{pageId}/analysis` で `slideRole`, `contentType`, `narrativePattern`, `visualType`, `layoutType`, `description` などを取得できる形を想定する。解析項目には、PPTXから抽出した確定情報か、モデルの推定か、人間が確認・修正した値かを区別できる由来と確認状態を持たせる。これらの項目とレスポンス形式は、解析機能を実装する際に定義する。
 
-元ファイルの参照先はページではなく資料に紐づけ、`GET /api/documents/{documentId}/source` で登録済みのPDFまたはPPTXを取得する形を想定する。元PPTXが登録されていない資料について、PPTXを返すことは保証しない。ページ1枚を独立したPPTXとして抽出する機能は対象に含めない。
+元ファイルの参照先はページではなく資料に紐づける。`GET /api/documents/{documentId}/source` は登録時のPDFまたはPPTX全体を元のファイル名で返す。元PPTXが登録されていない資料について、PPTXを返すことは保証しない。ページ1枚を独立したPPTXとして抽出する機能は対象に含めない。
 
-削除、Drive連携、意味検索、解析情報、元ファイル取得のAPIは、各機能を実装する前に詳細化する。検索結果や詳細応答にEmbeddingの生ベクトルやPPTXの内部XMLは含めない。
+削除、Drive連携、意味検索、解析情報のAPIは、各機能を実装する前に詳細化する。検索結果や詳細応答にEmbeddingの生ベクトルやPPTXの内部XMLは含めない。
