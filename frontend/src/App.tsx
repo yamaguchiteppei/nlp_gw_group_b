@@ -42,12 +42,11 @@ function readUrl() {
 }
 
 function isNotFoundRoute() {
-  if (location.pathname !== '/' && location.pathname !== '/register') return true
+  if (location.pathname === '/register') return false
+  if (location.pathname !== '/') return true
   const params = new URLSearchParams(location.search)
-  const slideId = params.get('slide')
-  const deckId = params.get('deck')
-  return (params.has('slide') && !slides.some((slide) => slide.id === slideId)) ||
-    (params.has('deck') && !deckById.has(deckId ?? ''))
+  if (!params.has('slide') && !params.has('deck')) return false
+  return !readUrl().selected
 }
 
 function SearchSkeleton({ gridStyle }: { gridStyle: CSSProperties }) {
