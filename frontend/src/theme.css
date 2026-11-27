@@ -1,0 +1,67 @@
+:root {
+  --visual-bg: #f2f5f7;
+  --visual-paper: #fff;
+  --visual-ink: #203743;
+  --visual-muted: #61737d;
+  --visual-line: #bdcbd1;
+  --visual-accent: #2b6e86;
+  --visual-shadow: rgba(32, 55, 67, .4);
+  color: var(--visual-ink);
+  background: var(--visual-bg);
+  font-family: system-ui, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+}
+
+.app-shell, .registration-shell, .detail-page { background: var(--visual-bg); }
+.site-header, .detail-header, .detail-facts, .registration-dropzone, .registration-progress { background: var(--visual-paper); }
+.site-header, .detail-header, .results-frame, .results-toolbar, .filter-sidebar,
+.registration-section, .registration-dropzone, .registration-form-heading,
+.registration-actions, .registration-complete, .detail-facts, .detail-group,
+.same-deck { border-color: var(--visual-line); }
+.site-header strong, .card-heading, .detail-facts h2, .registration-main h1,
+.registration-form-heading h2 { color: var(--visual-ink); }
+.card-deck, .card-meta, .card-secondary span, .detail-summary, .detail-group dt,
+.registration-field small, .registration-form-heading span { color: var(--visual-muted); }
+.card-meta, .eyebrow { font-variant-numeric: tabular-nums; }
+.result-tabs button[aria-selected=true] { border-bottom-color: var(--visual-accent); color: var(--visual-ink); }
+.thumbnail, .detail-artwork { border-color: var(--visual-line); background: var(--visual-paper); }
+.result-card:hover .thumbnail, .result-card:focus-visible .thumbnail { border-color: var(--visual-accent); }
+.filter-field select, .sort-field select, .registration-field input,
+.registration-field select, .registration-field textarea { border-color: var(--visual-line); background: var(--visual-paper); color: var(--visual-ink); }
+.registration-demo-note { border-color: var(--visual-accent); color: var(--visual-muted); }
+.registration-actions .registration-primary { border-color: var(--visual-accent); background: var(--visual-accent); }
+
+.site-header { height: 70px; border-bottom: 2px solid var(--visual-ink); }
+.site-header strong { font-size: 25px; font-weight: 800; letter-spacing: -.055em; }
+.brand { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.brand-mark { display: block; width: 38px; height: 38px; flex: none; }
+.search-form { width: min(710px, 100%); margin-left: 0; border: 1px solid var(--visual-line); box-shadow: 3px 3px 0 var(--visual-shadow); }
+.search-form button { border-left: 1px solid var(--visual-line); background: var(--visual-accent); color: #fff; font-weight: 750; }
+.results-frame { border-top: 1px solid var(--visual-line); }
+.filter-field select { border: 0; border-bottom: 1px solid var(--visual-line); background: transparent; font-weight: 650; }
+.thumbnail { border: 1px solid var(--visual-line); box-shadow: 0 2px 8px rgba(32, 55, 67, .08); transition: transform 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms ease, border-color 180ms ease; }
+.result-card:hover .thumbnail, .result-card:focus-visible .thumbnail { transform: translateY(-4px); box-shadow: 5px 7px 0 var(--visual-shadow), 0 14px 24px rgba(32, 55, 67, .12); }
+.card-heading { font-size: 19px; font-weight: 750; }
+.card-secondary span { color: var(--visual-accent); font-weight: 700; }
+.detail-shell { border: 2px solid var(--visual-ink); background: var(--visual-paper); }
+.detail-facts h2 { font-size: clamp(23px, 2.4vw, 34px); }
+.registration-dropzone { border: 1px solid var(--visual-line); box-shadow: 3px 3px 0 var(--visual-shadow); }
+
+.mascot { display: block; object-fit: contain; }
+.mascot--empty { width: 156px; height: 102px; margin: 0 auto 16px; }
+.mascot--progress { width: 116px; height: 80px; flex: none; animation: mascot-float 1.6s ease-in-out infinite alternate; }
+@keyframes mascot-float { to { transform: translateY(-4px); } }
+
+.app-shell[inert] .thumbnail { view-transition-name: none !important; }
+::view-transition-group(*) { animation-duration: 360ms; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 210ms; }
+
+@media (max-width: 760px) {
+  .site-header strong { font-size: 19px; }
+  .brand-mark { width: 32px; height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  .result-card:hover .thumbnail, .result-card:focus-visible .thumbnail { transform: none; }
+  .mascot--progress { animation: none; }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { registerDocumentMock, type RegistrationDetails, type RegistrationStage } from './mockRegistration'
+import { Brand } from './Brand'
 
 const maxFileSize = 50 * 1024 * 1024
 const categories = ['研究発表', '論文読会', '研究室セミナー']
@@ -110,7 +111,7 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
 
   return <div className="registration-shell">
     <header className="site-header registration-header">
-      <strong>Slide Library</strong>
+      <Brand />
       <button type="button" onClick={onBack}>一覧に戻る</button>
     </header>
     <main className="registration-main">
@@ -145,7 +146,7 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
           </div>
 
           {(busy || phase === 'failed') && <div className="registration-progress" role="status" aria-live="polite">
-            <span className="registration-progress-mark" aria-hidden="true" />
+            {busy ? <img className="mascot mascot--progress" src="/slide-mascot.png" alt="" /> : <span className="registration-progress-mark" aria-hidden="true" />}
             <div><strong>{phase === 'uploading' ? 'アップロード中' : phase === 'processing' ? '解析中' : '登録できませんでした'}</strong><span>{phase === 'uploading' ? 'ファイルを確認しています。' : phase === 'processing' ? 'スライドを処理しています。' : '入力内容を確認して再試行できます。'}</span></div>
           </div>}
 
