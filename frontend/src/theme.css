@@ -48,6 +48,7 @@
 
 .mascot { display: block; object-fit: contain; }
 .mascot--message { width: min(235px, 75vw); height: auto; margin: 0 auto 12px; animation: mascot-arrive 280ms ease-out both; }
+.mascot--not-found { width: min(250px, 75vw); height: auto; margin: 0 auto 10px; animation: mascot-arrive 280ms ease-out both; }
 .mascot--progress { width: 116px; height: 80px; flex: none; animation: mascot-float 1.6s ease-in-out infinite alternate; }
 @keyframes mascot-float { to { transform: translateY(-4px); } }
 @keyframes mascot-arrive { from { opacity: 0; transform: translateY(6px) rotate(-3deg); } to { opacity: 1; transform: translateY(0) rotate(0); } }
@@ -64,5 +65,5 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .result-card:hover .thumbnail, .result-card:focus-visible .thumbnail { transform: none; }
-  .mascot--progress, .mascot--message, .result-skeleton-image, .result-skeleton-title, .result-skeleton-meta { animation: none; }
+  .mascot--progress, .mascot--message, .mascot--not-found, .result-skeleton-image, .result-skeleton-title, .result-skeleton-meta { animation: none; }
 }

@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { SlideArtwork } from './SlideArtwork'
 import { RegistrationPage } from './RegistrationPage'
 import { Brand } from './Brand'
+import { NotFoundPage } from './NotFoundPage'
 import { deckById, decks, slides, type Deck, type Slide } from './mockData'
 
 type ResultType = 'slides' | 'decks'
@@ -38,6 +39,15 @@ function readUrl() {
     selectedType: selectedSlide ? 'slide' as const : 'deck' as const,
     searchStatus,
   }
+}
+
+function isNotFoundRoute() {
+  if (location.pathname !== '/' && location.pathname !== '/register') return true
+  const params = new URLSearchParams(location.search)
+  const slideId = params.get('slide')
+  const deckId = params.get('deck')
+  return (params.has('slide') && !slides.some((slide) => slide.id === slideId)) ||
+    (params.has('deck') && !deckById.has(deckId ?? ''))
 }
 
 function SearchSkeleton({ gridStyle }: { gridStyle: CSSProperties }) {
@@ -170,6 +180,7 @@ function App() {
   const [activeTransitionName, setActiveTransitionName] = useState(initial.selected ? `${initial.selectedType}-${initial.selected}` : '')
   const [overlay, setOverlay] = useState(Boolean(history.state?.background))
   const [registrationOpen, setRegistrationOpen] = useState(location.pathname === '/register')
+  const [notFound, setNotFound] = useState(isNotFoundRoute)
   const triggerRef = useRef<HTMLElement | null>(null)
   const scrollRef = useRef({ page: 0, results: 0 })
   const resultScrollRef = useRef<HTMLDivElement>(null)
@@ -218,6 +229,7 @@ function App() {
       const state = readUrl()
       void runViewTransition(() => {
         setRegistrationOpen(location.pathname === '/register')
+        setNotFound(isNotFoundRoute())
         setResultType(state.resultType)
         setQuery(state.query)
         setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query)
@@ -292,6 +304,7 @@ function App() {
   const effectiveColumns = Math.min(preferredColumns, maxColumns)
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
+  if (notFound) return <NotFoundPage />
   if (registrationOpen) return <RegistrationPage onBack={closeRegistration} />
 
   return <>
