@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { SlideArtwork } from './SlideArtwork'
 import { RegistrationPage } from './RegistrationPage'
-import { VisualDirectionSwitch } from './VisualDirectionSwitch'
+import { Brand } from './Brand'
 import { deckById, decks, slides, type Deck, type Slide } from './mockData'
 
 type ResultType = 'slides' | 'decks'
@@ -13,7 +13,7 @@ const years = [...new Set(decks.map((deck) => deck.year))].sort((a, b) => b - a)
 const roles = [...new Set(slides.map((slide) => slide.role))]
 
 function runViewTransition(change: () => void) {
-  if (!['shared', 'fade'].includes(document.documentElement.dataset.motion ?? '') || !document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     change()
     return
   }
@@ -155,15 +155,13 @@ function App() {
   }
 
   const update = (next: { resultType?: ResultType; query?: string; filters?: Filters; sort?: string }) => {
-    runViewTransition(() => {
-      if (next.resultType) setResultType(next.resultType)
-      if (next.query !== undefined) setQuery(next.query)
-      if (next.filters) setFilters(next.filters)
-      if (next.sort) setSort(next.sort)
-      setVisibleCount(6)
-      if (next.query !== undefined || next.filters || next.resultType || next.sort) resultScrollRef.current?.scrollTo(0, 0)
-      history.replaceState(null, '', makeUrl(next))
-    })
+    if (next.resultType) setResultType(next.resultType)
+    if (next.query !== undefined) setQuery(next.query)
+    if (next.filters) setFilters(next.filters)
+    if (next.sort) setSort(next.sort)
+    setVisibleCount(6)
+    if (next.query !== undefined || next.filters || next.resultType || next.sort) resultScrollRef.current?.scrollTo(0, 0)
+    history.replaceState(null, '', makeUrl(next))
   }
 
   useEffect(() => {
@@ -239,11 +237,11 @@ function App() {
   const effectiveColumns = Math.min(preferredColumns, maxColumns)
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
-  if (registrationOpen) return <><RegistrationPage onBack={closeRegistration} /><VisualDirectionSwitch /></>
+  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} />
 
   return <>
     <div className="app-shell" inert={Boolean(selected)}>
-      <header className="site-header"><strong>Slide Library</strong><button type="button" className="header-register" onClick={openRegistration}>資料を登録</button></header>
+      <header className="site-header"><Brand /><button type="button" className="header-register" onClick={openRegistration}>資料を登録</button></header>
       <main className={`library${sidebarCollapsed ? ' library--sidebar-collapsed' : ''}`}>
         <div className="search-area">
           <form className="search-form" role="search" onSubmit={(e) => { e.preventDefault(); update({ query: draft }) }}>
@@ -254,7 +252,7 @@ function App() {
         </div>
         <div className="results-frame">
           <aside className={`filter-sidebar${sidebarCollapsed ? ' filter-sidebar--collapsed' : ''}`} aria-label="絞り込み">
-            <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'フィルタを開く' : 'フィルタを閉じる'} aria-expanded={!sidebarCollapsed} onClick={() => runViewTransition(() => setSidebarCollapsed((value) => !value))}>{sidebarCollapsed ? 'フィルタ ›' : 'フィルタ ‹'}</button>
+            <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'フィルタを開く' : 'フィルタを閉じる'} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? 'フィルタ ›' : 'フィルタ ‹'}</button>
             {!sidebarCollapsed && <FilterControls filters={filters} onChange={(next) => update({ filters: next })} />}
           </aside>
           <section ref={resultsSectionRef} className="results-section" aria-label="検索結果">
@@ -264,7 +262,7 @@ function App() {
                 <button type="button" role="tab" aria-selected={resultType === 'decks'} onClick={() => update({ resultType: 'decks' })}>発表資料 <span>{matchedDecks.length}</span></button>
               </div>
               <div className="results-actions">
-                {maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => runViewTransition(() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count })))}>{count}</button>)}</div>}
+                {maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count }))}>{count}</button>)}</div>}
                 <label className="sort-field"><span className="sr-only">並び順</span><select value={sort} onChange={(e) => update({ sort: e.target.value })}><option value="default">資料内の順</option><option value="newest">発表年の新しい順</option></select></label>
               </div>
             </div>
@@ -274,15 +272,14 @@ function App() {
                 <div className="result-grid" style={gridStyle}>
                   {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} onClick={() => open('deck', deck.id)} />)}
                 </div>
-                {visibleCount < results.length && <button type="button" className="load-more" onClick={() => runViewTransition(() => setVisibleCount((count) => count + 6))}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
-              </> : <div className="empty-state"><h2>該当する資料がありません</h2><p>検索語を短くするか、条件を外してみてください。</p><button type="button" onClick={() => { setDraft(''); update({ query: '', filters: emptyFilters }) }}>検索をリセット</button></div>}
+                {visibleCount < results.length && <button type="button" className="load-more" onClick={() => setVisibleCount((count) => count + 6)}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
+              </> : <div className="empty-state"><img className="mascot mascot--empty" src="/slide-mascot.png" alt="" /><h2>該当する資料がありません</h2><p>検索語を短くするか、条件を外してみてください。</p><button type="button" onClick={() => { setDraft(''); update({ query: '', filters: emptyFilters }) }}>検索をリセット</button></div>}
             </div>
           </section>
         </div>
       </main>
     </div>
     {selected && <Detail key={`${selectedType}-${selected}`} id={selected} kind={selectedType} overlay={overlay} onClose={close} onSelectSlide={selectRelated} />}
-    <VisualDirectionSwitch />
   </>
 }
 
