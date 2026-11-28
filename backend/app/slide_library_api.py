@@ -345,10 +345,10 @@ def list_document_pages(
     offset: int = Query(0),
 ):
     validate_pagination(limit, offset)
-    pages = [page for page in PAGES.values() if page.documentId == documentId]
-    if not pages and documentId not in read_documents():
+    if documentId not in read_documents():
         raise HTTPException(status_code=404, detail="Document not found")
 
+    pages = [page for page in PAGES.values() if page.documentId == documentId]
     pages.sort(key=lambda page: (page.pageNumber, page.id))
     return PageSummaryList(
         items=[to_summary(page) for page in pages[offset:offset + limit]],

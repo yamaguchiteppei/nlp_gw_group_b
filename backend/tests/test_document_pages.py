@@ -21,6 +21,11 @@ def test_document_pages_are_ordered_and_paginated(monkeypatch) -> None:
         ]
     }
     monkeypatch.setattr(slide_library_api, "PAGES", pages)
+    monkeypatch.setattr(
+        slide_library_api,
+        "read_documents",
+        lambda: {"document-001": {"status": "ready"}},
+    )
 
     response = TestClient(app).get(
         "/api/documents/document-001/pages?limit=2&offset=1"
@@ -58,3 +63,11 @@ def test_document_pages_reject_unknown_document_and_bad_pagination(
     assert client.get("/api/documents/missing/pages?limit=0").status_code == 400
     assert client.get("/api/documents/missing/pages?limit=101").status_code == 400
     assert client.get("/api/documents/missing/pages?offset=-1").status_code == 400
+
+
+def test_document_pages_reject_orphaned_pages(monkeypatch) -> None:
+    monkeypatch.setattr(slide_library_api, "read_documents", lambda: {})
+
+    response = TestClient(app).get("/api/documents/document-001/pages")
+
+    assert response.status_code == 404
