@@ -18,7 +18,7 @@ import {
 type ResultType = 'slides' | 'decks'
 type SearchStatus = 'ready' | 'loading' | 'error'
 type DeckResult = { id: string; title: string; pages: PageSummary[] }
-const emptyFilters: SearchFilters = { tag: '', folderPath: '' }
+const emptyFilters: SearchFilters = { tag: '', folderPath: '', author: '' }
 
 function runViewTransition(change: () => void): Promise<void> {
   if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -35,7 +35,7 @@ function readUrl() {
   return {
     query: params.get('q') ?? '',
     resultType: params.get('view') === 'decks' ? 'decks' as ResultType : 'slides' as ResultType,
-    filters: { tag: params.get('tag') ?? '', folderPath: params.get('folderPath') ?? '' },
+    filters: { tag: params.get('tag') ?? '', folderPath: params.get('folderPath') ?? '', author: params.get('author') ?? '' },
     selected: slide || deck || '',
     selectedType: slide ? 'slide' as const : 'deck' as const,
   }
@@ -76,9 +76,13 @@ function FilterControls({
 }: { filters: SearchFilters; pages: PageSummary[]; onChange: (next: SearchFilters) => void }) {
   const tags = [...new Set(pages.flatMap((page) => page.tags))].sort((a, b) => a.localeCompare(b, 'ja'))
   const folders = [...new Set(pages.flatMap((page) => page.document.folderPath.map((_, index) => page.document.folderPath.slice(0, index + 1).join('/'))))].sort((a, b) => a.localeCompare(b, 'ja'))
+  const authors = [...new Set(pages.flatMap((page) => page.document.authors))].sort((a, b) => a.localeCompare(b, 'ja'))
   return <div className="filter-controls">
     <label className="filter-field"><span className="sr-only">元フォルダ</span><select value={filters.folderPath} onChange={(event) => onChange({ ...filters, folderPath: event.target.value })}>
       <option value="">元フォルダ</option>{folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+    </select></label>
+    <label className="filter-field"><span className="sr-only">著者</span><select value={filters.author} onChange={(event) => onChange({ ...filters, author: event.target.value })}>
+      <option value="">著者</option>{authors.map((author) => <option key={author} value={author}>{author}</option>)}
     </select></label>
     <label className="filter-field"><span className="sr-only">タグ</span><select value={filters.tag} onChange={(event) => onChange({ ...filters, tag: event.target.value })}>
       <option value="">タグ</option>{tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
@@ -260,26 +264,27 @@ function App() {
   const resultsSectionRef = useRef<HTMLElement>(null)
   const tag = filters.tag
   const folderPath = filters.folderPath
+  const author = filters.author
 
   useEffect(() => {
-    if ((!query && !tag && !folderPath) || catalog.length) return
+    if ((!query && !tag && !folderPath && !author) || catalog.length) return
     const controller = new AbortController()
     void searchPages('', emptyFilters, controller.signal).then((result) => {
       if (!controller.signal.aborted) setCatalog(result)
     }).catch(() => { /* The current results still provide filter choices. */ })
     return () => controller.abort()
-  }, [query, tag, folderPath, retry, catalog.length])
+  }, [query, tag, folderPath, author, retry, catalog.length])
 
   useEffect(() => {
     const controller = new AbortController()
-    void searchPages(query, { tag, folderPath }, controller.signal).then((result) => {
+    void searchPages(query, { tag, folderPath, author }, controller.signal).then((result) => {
       if (controller.signal.aborted) return
       setPages(result)
-      if (!query && !tag && !folderPath) setCatalog(result)
+      if (!query && !tag && !folderPath && !author) setCatalog(result)
       setSearchStatus('ready')
     }).catch(() => { if (!controller.signal.aborted) setSearchStatus('error') })
     return () => controller.abort()
-  }, [query, tag, folderPath, retry])
+  }, [query, tag, folderPath, author, retry])
 
   const makeUrl = (next: { resultType?: ResultType; query?: string; filters?: SearchFilters } = {}) => {
     const value = { resultType, query, filters, ...next }
@@ -288,6 +293,7 @@ function App() {
     if (value.resultType !== 'slides') params.set('view', value.resultType)
     if (value.filters.tag) params.set('tag', value.filters.tag)
     if (value.filters.folderPath) params.set('folderPath', value.filters.folderPath)
+    if (value.filters.author) params.set('author', value.filters.author)
     return `${location.pathname}${params.size ? `?${params}` : ''}`
   }
 
@@ -296,7 +302,7 @@ function App() {
     if (next.query !== undefined) setQuery(next.query)
     if (next.filters) setFilters(next.filters)
     const searchChanged = (next.query !== undefined && next.query !== query) ||
-      (next.filters !== undefined && (next.filters.tag !== filters.tag || next.filters.folderPath !== filters.folderPath))
+      (next.filters !== undefined && (next.filters.tag !== filters.tag || next.filters.folderPath !== filters.folderPath || next.filters.author !== filters.author))
     if (searchChanged) setSearchStatus('loading')
     else if (next.query !== undefined || next.filters) { setSearchStatus('loading'); setRetry((value) => value + 1) }
     setVisibleCount(6)
@@ -307,7 +313,7 @@ function App() {
   useEffect(() => {
     const onPop = () => {
       const state = readUrl()
-      const searchChanged = state.query !== query || state.filters.tag !== filters.tag || state.filters.folderPath !== filters.folderPath
+      const searchChanged = state.query !== query || state.filters.tag !== filters.tag || state.filters.folderPath !== filters.folderPath || state.filters.author !== filters.author
       void runViewTransition(() => {
         setRegistrationOpen(location.pathname === '/register')
         setNotFound(isNotFoundRoute())
@@ -331,7 +337,7 @@ function App() {
     }
     addEventListener('popstate', onPop)
     return () => removeEventListener('popstate', onPop)
-  }, [query, filters.tag, filters.folderPath])
+  }, [query, filters.tag, filters.folderPath, filters.author])
 
   useEffect(() => {
     const element = resultsSectionRef.current
@@ -441,7 +447,7 @@ function App() {
               </div>
               <div className="results-actions">{maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count }))}>{count}</button>)}</div>}</div>
             </div>
-            {activeFilters.length > 0 && <div className="active-row">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => update({ filters: { ...filters, [key]: '' } })}>{key === 'tag' ? 'タグ' : '元フォルダ'}: {value} <span aria-hidden="true">×</span></button>)}<button type="button" className="clear-button" onClick={() => update({ filters: emptyFilters })}>条件を解除</button></div>}
+            {activeFilters.length > 0 && <div className="active-row">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => update({ filters: { ...filters, [key]: '' } })}>{key === 'tag' ? 'タグ' : key === 'author' ? '著者' : '元フォルダ'}: {value} <span aria-hidden="true">×</span></button>)}<button type="button" className="clear-button" onClick={() => update({ filters: emptyFilters })}>条件を解除</button></div>}
             <div ref={resultScrollRef} className="result-scroll" role="region" aria-label="検索結果の一覧" aria-busy={searchStatus === 'loading'} tabIndex={0}>
               {searchStatus === 'loading' ? <SearchSkeleton gridStyle={gridStyle} /> : searchStatus === 'error' ? <SearchMessage kind="error" onRetry={() => { setSearchStatus('loading'); setRetry((value) => value + 1) }} /> : results.length ? <>
                 <div className="result-grid" style={gridStyle}>

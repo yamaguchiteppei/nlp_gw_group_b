@@ -90,6 +90,7 @@ class PageSummaryList(BaseModel):
 class SearchFilters(BaseModel):
     tag: str | None = None
     folderPath: str | None = None
+    author: str | None = None
 
 
 class SearchRequest(BaseModel):
@@ -188,6 +189,10 @@ def search_pages(request: SearchRequest):
 
         if request.filters.tag is not None:
             if request.filters.tag not in page.tags:
+                continue
+
+        if request.filters.author is not None:
+            if request.filters.author not in doc.authors:
                 continue
 
         if request.filters.folderPath is not None:
