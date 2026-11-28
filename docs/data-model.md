@@ -45,7 +45,7 @@ Drive上のPDFは取り込み時にライブラリの保存領域へコピーし
 
 資料には登録経路を表す `origin.kind`（`upload` / `google_drive`）を持たせる。Drive由来の場合の内部データ例は `{"kind":"google_drive","driveFileId":"...","driveModifiedTime":"...","driveFolders":[{"id":"...","name":"論文読み会"}]}` とする。既存の `folderPath[]` はフォルダ名の表示・検索に使い、DriveのIDは同名フォルダの識別と再取り込み判定に使う。階層の一部を取得できない場合は、分かる範囲だけ表示し、完全な階層を推測しない。Driveの参照リンクを示す場合も、その利用者にDrive側の閲覧権限があるとは限らない。
 
-初回の単一ファイル取り込みではDriveファイルIDで既存資料を確認し、同じファイルの重複登録を避ける。自動同期と、Drive上で更新されたPDFの再取り込み・ページIDの扱いは別途設計する。Driveの更新時刻は発表年の代わりにしない。[Google Driveのファイル属性](https://developers.google.com/workspace/drive/api/reference/rest/v3/files)を参照する。
+初回の単一ファイル取り込みではDriveファイルIDで既存資料を確認し、同じファイルの重複登録を避ける。自動同期と、Drive上で更新されたPDFの再取り込み・ページIDの扱いは別途設計する。Driveの更新時刻は発表年の代わりにしない。Driveの閲覧権限はライブラリ内のコピーに引き継がれないため、取り込み前に共有ライブラリの利用者全員へ見せてよい資料か確認する。[Google Driveのファイル属性](https://developers.google.com/workspace/drive/api/reference/rest/v3/files)と[共有権限](https://developers.google.com/workspace/drive/api/guides/manage-sharing)を参照する。
 
 ## PDF/PPTX登録情報
 

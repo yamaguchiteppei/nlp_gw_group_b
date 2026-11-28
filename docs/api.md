@@ -111,7 +111,7 @@ Backendは登録したPDF/PPTXをページ画像とテキストに変換し、�
 
 ## Drive PDF取り込みのAPI案（Issue #6・未実装）
 
-`POST /api/documents/import/google-drive` はDriveのPDFファイルIDを受け取り、PDF本体をライブラリ側へ保存して既存の取込処理に渡す。資料にはDriveファイルID、更新時刻、取得できたフォルダのID・名前を保存し、`folderPath[]` は表示用に生成する。同じDriveファイルIDを再指定しても別資料を増やさず、既存の資料IDと状態を返す。自動同期・更新されたPDFの再取り込みは別途設計する。
+`POST /api/documents/import/google-drive` はDriveのPDFファイルIDを受け取り、PDF本体をライブラリ側へ保存して既存の取込処理に渡す。資料にはDriveファイルID、更新時刻、取得できたフォルダのID・名前を保存し、`folderPath[]` は表示用に生成する。取り込み対象が共有ライブラリの利用者全員に閲覧可能な資料か、取り込み前に確認する。同じDriveファイルIDを再指定しても別資料を増やさず、既存の資料IDと状態を返す。自動同期・更新されたPDFの再取り込みは別途設計する。
 
 DriveのPDFを登録した場合、`GET /api/documents/{documentId}/source` は取り込んだPDFを返す。Driveの所有者を著者、Driveの更新日時を発表年、フォルダ名を区分や役割として確定しない。フォルダの一部を取得できないときは分かる範囲だけ保持する。Driveからの取得方法とフォルダの扱いは[Google Driveのファイル属性](https://developers.google.com/workspace/drive/api/reference/rest/v3/files)と[ファイルのダウンロード](https://developers.google.com/workspace/drive/api/guides/manage-downloads)を参照する。
 
