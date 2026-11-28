@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import tempfile
+import unicodedata
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -172,6 +173,7 @@ def list_pages(
 def search_pages(request: SearchRequest):
     validate_pagination(request.limit, request.offset)
     matched = []
+    terms = unicodedata.normalize("NFKC", request.query).casefold().split()
 
     for page in visible_pages().values():
         doc = page.document
@@ -179,7 +181,8 @@ def search_pages(request: SearchRequest):
             [doc.title, *doc.authors, page.heading, page.summary]
         )
 
-        if request.query.casefold() not in searchable.casefold():
+        normalized = unicodedata.normalize("NFKC", searchable).casefold()
+        if any(term not in normalized for term in terms):
             continue
 
         if request.filters.tag is not None:

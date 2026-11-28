@@ -66,6 +66,10 @@ def test_registered_document_has_persistent_pages_and_previews(
         "/api/pages/search", json={"query": "研究背景"}
     ).json()
     assert [page["id"] for page in search["items"]] == [page_id]
+    combined = another_client.post(
+        "/api/pages/search", json={"query": "背景　研究者"}
+    ).json()
+    assert [page["id"] for page in combined["items"]] == [page_id]
 
     tags = another_client.put(
         f"/api/pages/{page_id}/tags", json={"tags": ["背景"]}
