@@ -11,6 +11,8 @@ services:
     build: ./frontend
     depends_on:
       - api
+    environment:
+      API_PROXY_TARGET: http://api:8000
     volumes:
       - ./frontend:/app
       - web_node_modules:/app/node_modules

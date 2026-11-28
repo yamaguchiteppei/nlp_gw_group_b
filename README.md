@@ -28,6 +28,8 @@ docker compose up --build
 
 バックエンドのPython依存関係は `backend/pyproject.toml` と `backend/uv.lock` で管理し、コンテナのビルド時に `uv sync --locked` でインストールする。
 
+フロントエンドをホストで `npm run dev` から起動する場合は、先にDocker Composeを起動する。`http://localhost:5173` の `/api` は `http://127.0.0.1:3000` を経由して同じバックエンドに接続する。Compose内のWebコンテナは直接APIサービスに接続する。
+
 バックエンドのチェックは `docker compose exec api uv run --group dev ruff check .` と `docker compose exec api uv run --group dev pytest -q` で実行できる。フロントエンドは `frontend/` で `npm run lint` と `npm run build` を実行する。
 
 PDF/PPTXは画面から登録できる。検証用ファイルを `data/imports/` に配置することもできるが、置くだけでは自動登録されない。`data/` はGitの管理対象外で、バックエンドには `/data` としてマウントされる。認証・資料ごとの権限制御は未実装のため、実資料の登録前に[対応Issue](https://github.com/yamaguchiteppei/nlp_gw_group_b/issues/30)を完了する。

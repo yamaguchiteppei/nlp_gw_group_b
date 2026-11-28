@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     strictPort: true,
     proxy: {
-      '/api': 'http://api:8000',
+      '/api': process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:3000',
     },
   },
 })
