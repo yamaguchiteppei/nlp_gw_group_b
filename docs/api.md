@@ -86,9 +86,9 @@ Backendは登録したPDF/PPTXをページ画像とテキストに変換し、�
 
 ## 検索メタデータのAPI拡張案（Issue #39・未実装）
 
-`PageSummary` と `Page` に `slideRole: string | null`、各応答の `document` に `category: string | null` と `presentationYear: number | null` を追加する。`Page` の `document` には登録経路を示す `originKind: "upload" | "google_drive"` も追加する。既存資料の区分・発表年・役割は `null`、登録経路は `upload` とし、未設定でも一覧・詳細に表示できるようにする。
+`PageSummary` と `Page` に `slideRole: string | null`、各応答の `document` に `category: string | null` と `presentationYear: number | null` を追加する。`Page` の `document` には `origin: { "kind": "upload" | "google_drive" }` を追加する。既存資料の区分・発表年・役割は `null`、登録経路は `upload` とし、保存済みJSONに新項目がなくても読み込める既定値を設ける。DriveファイルIDなどの内部情報は通常のページ応答に含めない。
 
-`POST /api/pages/search` の `filters` に `category`、`presentationYear`、`slideRole` を追加する。いずれも任意で、指定した値と完全一致させ、既存条件とはANDで組み合わせる。未設定値を絞り込む条件は初期対応に含めない。例：
+`POST /api/pages/search` の `filters` に `category`、`presentationYear`、`slideRole`、`folderId` を追加する。前の3項目は指定値に完全一致させる。`folderId` はDrive由来の資料が保持するフォルダIDの階層に含まれるかで判定し、既存の `folderPath` は名前による絞り込みとして残す。条件は任意で、指定した条件をANDで組み合わせる。未設定値を絞り込む条件は初期対応に含めない。例：
 
 ```json
 {
@@ -103,15 +103,19 @@ Backendは登録したPDF/PPTXをページ画像とテキストに変換し、�
 }
 ```
 
-多数のDrive資料を取り込んだ後もフィルタ候補を得るため、`GET /api/search/facets` を追加する。応答は `authors[]`, `tags[]`, `folderPaths[]`, `categories[]`, `presentationYears[]`, `slideRoles[]` の重複しない値とし、結果件数や検索の現在ページには依存させない。`folderPaths[]` は表示用の階層を `/` で結んだ値とする。最初は件数を含めず、候補の表示名はUI側で管理する。
+多数のDrive資料を取り込んだ後もフィルタ候補を得るため、`GET /api/search/facets?field=...&q=...&limit=50&offset=0` を追加する。`field` は `authors`, `tags`, `folders`, `categories`, `presentationYears`, `slideRoles` のいずれか。応答は選択した項目の `items`, `total`, `limit`, `offset` を持ち、候補名の部分一致検索とページ分割に対応する。`limit`・`offset` は既存の一覧APIと同じ範囲とし、`q` の省略時は全候補を対象にする。`null` は候補から除く。候補は検索結果の現在ページには依存させない。
 
-`POST /api/documents` の登録フォームには任意の `category` と `presentationYear` を追加する。登録後の訂正には `PATCH /api/documents/{documentId}/metadata`（`title`, `authors`, `category`, `presentationYear` の一部）と `PATCH /api/pages/{pageId}/metadata`（`slideRole`）を設ける。省略した項目は変更せず、`category`・`presentationYear`・`slideRole` の `null` は未設定に戻し、`authors: []` は著者を空にする。値の検証、存在しないIDの `404`、更新権限は実装時に既存APIと整合させる。出典のDriveファイルIDやフォルダIDはこの更新APIで変更しない。
+`folders` では各階層を候補として返す。`items` の例は `[{"kind":"google_drive","value":"folder-id","label":"論文読み会 / 2025"},{"kind":"upload","value":"論文読み会/2025","label":"論文読み会 / 2025"}]` とする。Drive由来の選択値は `filters.folderId`、手入力の元フォルダは `filters.folderPath` に使う。同名や `/` を含むDriveフォルダ名はIDで区別する。他の `field` の `items` は文字列または年の数値の配列とする。
+
+`POST /api/documents` の登録フォームには任意の `category` と `presentationYear` を追加する。登録後の訂正には `PATCH /api/documents/{documentId}/metadata`（`title`, `authors`, `category`, `presentationYear` の一部）と `PATCH /api/pages/{pageId}/metadata`（`slideRole`）を設ける。省略した項目は変更せず、`category`・`presentationYear`・`slideRole` の `null` は未設定に戻し、`authors: []` は著者を空にする。資料メタデータの正本は `Document` とし、ページ応答と検索は常に現在の資料情報を参照する。保存済みページ内の資料スナップショットに依存しない。更新は既存のメタデータロック内で読み取り・変更・保存を行い、別項目への同時更新が失われないようにする。出典のDriveファイルIDやフォルダIDはこの更新APIで変更しない。
 
 検索画面では現在の元フォルダ・著者・タグに資料区分・発表年・ページの役割を加える。資料単位表示でも同じページ検索結果を資料IDでまとめるため、`slideRole` は「その役割のページを含む資料」という意味になる。候補はFacet APIから取得し、ページ一覧を全件取得して候補を作る方式を置き換える。
 
 ## Drive PDF取り込みのAPI案（Issue #6・未実装）
 
-`POST /api/documents/import/google-drive` はDriveのPDFファイルIDを受け取り、PDF本体をライブラリ側へ保存して既存の取込処理に渡す。資料にはDriveファイルID、更新時刻、取得できたフォルダのID・名前を保存し、`folderPath[]` は表示用に生成する。取り込み対象が共有ライブラリの利用者全員に閲覧可能な資料か、取り込み前に確認する。同じDriveファイルIDを再指定しても別資料を増やさず、既存の資料IDと状態を返す。自動同期・更新されたPDFの再取り込みは別途設計する。
+`POST /api/documents/import/google-drive` はDriveのPDFファイルIDを受け取り、PDF本体をライブラリ側へ保存して既存の取込処理に渡す。資料にはDriveファイルID、更新時刻、取得できたフォルダのID・名前を保存し、`folderPath[]` は表示用に生成する。取り込み対象が共有ライブラリの利用者全員に閲覧可能な資料か、取り込み前に確認する。PDF以外やダウンロード不可のファイルは受け付けず、既存の50 MiB上限をダウンロード中にも適用して、失敗時は途中ファイルを削除する。
+
+DriveファイルIDの確認と資料登録は同じメタデータロック内で行い、同時リクエストでも資料IDを重複発行しない。同じファイルIDで既存資料が `pending` / `ready` ならそのIDと状態を返し、`failed` なら同じIDで取り込みを再試行できるようにする。自動同期・更新されたPDFの再取り込みは別途設計する。
 
 DriveのPDFを登録した場合、`GET /api/documents/{documentId}/source` は取り込んだPDFを返す。Driveの所有者を著者、Driveの更新日時を発表年、フォルダ名を区分や役割として確定しない。フォルダの一部を取得できないときは分かる範囲だけ保持する。Driveからの取得方法とフォルダの扱いは[Google Driveのファイル属性](https://developers.google.com/workspace/drive/api/reference/rest/v3/files)と[ファイルのダウンロード](https://developers.google.com/workspace/drive/api/guides/manage-downloads)を参照する。
 
