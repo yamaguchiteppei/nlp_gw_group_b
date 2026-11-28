@@ -1,4 +1,6 @@
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote
 
 import pytest
@@ -119,3 +121,27 @@ def test_download_openapi_uses_binary_response() -> None:
         "type": "string",
         "format": "binary",
     }
+
+
+def test_concurrent_uploads_keep_both_documents(isolated_uploads, monkeypatch) -> None:
+    original_read = slide_library_api.read_documents
+
+    def slow_read():
+        documents = original_read()
+        time.sleep(0.02)
+        return documents
+
+    monkeypatch.setattr(slide_library_api, "read_documents", slow_read)
+
+    def upload():
+        return TestClient(app).post(
+            "/api/documents",
+            data={"title": "資料"},
+            files={"file": ("source.pdf", b"%PDF-1.4", "application/pdf")},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: upload(), range(2)))
+
+    assert all(response.status_code == 202 for response in responses)
+    assert len(original_read()) == 2

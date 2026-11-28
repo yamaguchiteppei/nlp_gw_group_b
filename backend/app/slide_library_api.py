@@ -5,6 +5,7 @@ import json
 import os
 import uuid
 from pathlib import Path
+from threading import Lock
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
@@ -17,6 +18,7 @@ DATA_DIR = Path("/data")
 UPLOAD_DIR = DATA_DIR / "uploads"
 METADATA_FILE = DATA_DIR / "documents.json"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MiB
+DOCUMENTS_LOCK = Lock()
 
 
 class DocumentSummary(BaseModel):
@@ -254,21 +256,22 @@ async def upload_document(
     saved_path = UPLOAD_DIR / f"{document_id}{suffix}"
     saved_path.write_bytes(content)
 
-    documents = read_documents()
-    documents[document_id] = {
-        "id": document_id,
-        "status": "pending",
-        "pageCount": None,
-        "error": None,
-        "title": title.strip(),
-        "authors": authors or [],
-        "folderPath": folderPath or [],
-        "fileName": filename,
-        "format": suffix.lstrip("."),
-        "savedPath": str(saved_path),
-    }
+    with DOCUMENTS_LOCK:
+        documents = read_documents()
+        documents[document_id] = {
+            "id": document_id,
+            "status": "pending",
+            "pageCount": None,
+            "error": None,
+            "title": title.strip(),
+            "authors": authors or [],
+            "folderPath": folderPath or [],
+            "fileName": filename,
+            "format": suffix.lstrip("."),
+            "savedPath": str(saved_path),
+        }
 
-    write_documents(documents)
+        write_documents(documents)
 
     return DocumentAccepted(id=document_id)
 
