@@ -106,3 +106,29 @@ export function getDocumentPages(
     () => ({ signal }),
   )
 }
+
+function safeDownloadName(name: string) {
+  return name.replace(/\\/g, '/').split('/').pop() || 'document'
+}
+
+function responseFilename(disposition: string | null, fallback: string) {
+  const encoded = disposition?.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try { return safeDownloadName(decodeURIComponent(encoded.trim())) } catch { /* use fallback */ }
+  }
+  const plain = disposition?.match(/filename\s*=\s*"?([^";]+)"?/i)?.[1]
+  return safeDownloadName(plain || fallback)
+}
+
+export async function getSourceFile(
+  documentId: string,
+  fallbackName: string,
+  signal: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`/api/documents/${encodeURIComponent(documentId)}/source`, { signal })
+  if (!response.ok) throw new ApiError(response.status)
+  return {
+    blob: await response.blob(),
+    filename: responseFilename(response.headers.get('content-disposition'), fallbackName),
+  }
+}
