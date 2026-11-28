@@ -1,11 +1,40 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app import slide_library_api
 from app.main import app
 
 
-def test_document_pages_are_ordered_and_paginated(monkeypatch) -> None:
-    sample = slide_library_api.PAGES["page-001"]
+@pytest.fixture
+def isolated_pages(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        slide_library_api, "PAGE_METADATA_FILE", tmp_path / "pages.json"
+    )
+    monkeypatch.setattr(slide_library_api, "PAGES", {})
+
+
+def sample_page() -> slide_library_api.Page:
+    return slide_library_api.Page(
+        id="page-001",
+        documentId="document-001",
+        pageNumber=1,
+        heading="研究背景",
+        summary="研究課題の説明",
+        tags=[],
+        previewUrl=None,
+        document=slide_library_api.DocumentDetail(
+            id="document-001",
+            title="発表資料",
+            authors=["研究者"],
+            folderPath=["論文読み会"],
+            fileName="sample.pdf",
+            format="pdf",
+        ),
+    )
+
+
+def test_document_pages_are_ordered_and_paginated(isolated_pages, monkeypatch) -> None:
+    sample = sample_page()
     pages = {
         page.id: page
         for page in [
@@ -38,8 +67,9 @@ def test_document_pages_are_ordered_and_paginated(monkeypatch) -> None:
     assert [item["id"] for item in response.json()["items"]] == ["page-b", "page-c"]
 
 
-def test_document_pages_are_empty_before_generation(monkeypatch) -> None:
-    monkeypatch.setattr(slide_library_api, "PAGES", {})
+def test_document_pages_are_empty_before_generation(
+    isolated_pages, monkeypatch
+) -> None:
     monkeypatch.setattr(
         slide_library_api,
         "read_documents",
@@ -53,9 +83,8 @@ def test_document_pages_are_empty_before_generation(monkeypatch) -> None:
 
 
 def test_document_pages_reject_unknown_document_and_bad_pagination(
-    monkeypatch,
+    isolated_pages, monkeypatch,
 ) -> None:
-    monkeypatch.setattr(slide_library_api, "PAGES", {})
     monkeypatch.setattr(slide_library_api, "read_documents", lambda: {})
     client = TestClient(app)
 
@@ -65,7 +94,8 @@ def test_document_pages_reject_unknown_document_and_bad_pagination(
     assert client.get("/api/documents/missing/pages?offset=-1").status_code == 400
 
 
-def test_document_pages_reject_orphaned_pages(monkeypatch) -> None:
+def test_document_pages_reject_orphaned_pages(isolated_pages, monkeypatch) -> None:
+    monkeypatch.setattr(slide_library_api, "PAGES", {"page-001": sample_page()})
     monkeypatch.setattr(slide_library_api, "read_documents", lambda: {})
 
     response = TestClient(app).get("/api/documents/document-001/pages")
