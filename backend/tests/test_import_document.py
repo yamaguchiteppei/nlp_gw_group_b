@@ -1,6 +1,7 @@
 import json
 import struct
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,29 @@ from app import slide_library_api
 from app.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_upload_request_id_prevents_duplicate_documents(isolated_data) -> None:
+    client = TestClient(app)
+    fixture = FIXTURES / "sample.pdf"
+    request_id = str(uuid.uuid4())
+    kwargs = {
+        "data": {"title": "同じ資料", "requestId": request_id},
+        "files": {"file": (fixture.name, fixture.read_bytes())},
+    }
+    first = client.post("/api/documents", **kwargs)
+    second = client.post("/api/documents", **kwargs)
+
+    assert first.status_code == second.status_code == 202
+    assert first.json()["id"] == second.json()["id"]
+    assert len(slide_library_api.read_documents()) == 1
+
+    changed = client.post(
+        "/api/documents",
+        data={"title": "別の資料", "requestId": request_id},
+        files=kwargs["files"],
+    )
+    assert changed.status_code == 409
 
 
 @pytest.fixture

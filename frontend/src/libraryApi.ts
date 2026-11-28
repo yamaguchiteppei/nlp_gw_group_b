@@ -28,15 +28,15 @@ export type SearchFilters = { tag: string; folderPath: string }
 export class ApiError extends Error {
   status: number
 
-  constructor(status: number) {
-    super(`API request failed (${status})`)
+  constructor(status: number, detail?: string) {
+    super(detail || `API request failed (${status})`)
     this.status = status
   }
 }
 
-async function json<T>(path: string, init?: RequestInit): Promise<T> {
+async function json<T>(path: string, init?: RequestInit, timeoutMs = 15_000): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 15_000)
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
   const onAbort = () => controller.abort()
   init?.signal?.addEventListener('abort', onAbort, { once: true })
   if (init?.signal?.aborted) controller.abort()
@@ -47,8 +47,37 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
     window.clearTimeout(timeout)
     init?.signal?.removeEventListener('abort', onAbort)
   }
-  if (!response.ok) throw new ApiError(response.status)
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null)
+    const detail = payload && typeof payload === 'object' && 'detail' in payload &&
+      typeof payload.detail === 'string' ? payload.detail : undefined
+    throw new ApiError(response.status, detail)
+  }
   return response.json() as Promise<T>
+}
+
+export type DocumentStatus = {
+  id: string
+  status: 'pending' | 'ready' | 'failed'
+  pageCount: number | null
+  error: string | null
+}
+
+export function registerDocument(
+  details: { file: File; title: string; authors: string[]; folderPath: string[]; requestId: string },
+  signal: AbortSignal,
+): Promise<{ id: string; status: 'pending' }> {
+  const body = new FormData()
+  body.append('file', details.file)
+  body.append('title', details.title)
+  body.append('requestId', details.requestId)
+  details.authors.forEach((author) => body.append('authors', author))
+  details.folderPath.forEach((folder) => body.append('folderPath', folder))
+  return json('/api/documents', { method: 'POST', body, signal }, 60_000)
+}
+
+export function getDocumentStatus(id: string, signal: AbortSignal): Promise<DocumentStatus> {
+  return json(`/api/documents/${encodeURIComponent(id)}`, { signal })
 }
 
 async function collectPages(

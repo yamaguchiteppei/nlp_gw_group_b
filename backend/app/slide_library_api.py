@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -300,6 +301,7 @@ async def upload_document(
     title: Annotated[str, Form()],
     authors: Annotated[list[str] | None, Form()] = None,
     folderPath: Annotated[list[str] | None, Form()] = None,
+    requestId: Annotated[str | None, Form()] = None,
 ):
     filename = safe_filename(file.filename or "")
     suffix = Path(filename).suffix.lower()
@@ -323,25 +325,47 @@ async def upload_document(
     if suffix == ".pptx" and not content.startswith(b"PK"):
         raise HTTPException(status_code=400, detail="Invalid PPTX")
 
-    document_id = str(uuid.uuid4())
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if requestId is not None:
+        try:
+            requestId = str(uuid.UUID(requestId))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid requestId") from exc
 
+    checksum = hashlib.sha256(content).hexdigest()
+    metadata = {
+        "title": title.strip(),
+        "authors": authors or [],
+        "folderPath": folderPath or [],
+        "fileName": filename,
+        "format": suffix.lstrip("."),
+        "contentSha256": checksum,
+    }
+    document_id = str(uuid.uuid4())
     saved_path = UPLOAD_DIR / f"{document_id}{suffix}"
-    saved_path.write_bytes(content)
 
     with DOCUMENTS_LOCK, metadata_file_lock():
         documents = read_documents()
+        if requestId:
+            existing = next(
+                (document for document in documents.values()
+                 if document.get("requestId") == requestId), None
+            )
+            if existing:
+                if any(existing.get(key) != value for key, value in metadata.items()):
+                    raise HTTPException(
+                        status_code=409, detail="requestId already used"
+                    )
+                return DocumentAccepted(id=existing["id"])
+
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        saved_path.write_bytes(content)
         documents[document_id] = {
             "id": document_id,
             "status": "pending",
             "pageCount": None,
             "error": None,
-            "title": title.strip(),
-            "authors": authors or [],
-            "folderPath": folderPath or [],
-            "fileName": filename,
-            "format": suffix.lstrip("."),
+            **metadata,
+            "requestId": requestId,
             "savedPath": str(saved_path),
         }
 
