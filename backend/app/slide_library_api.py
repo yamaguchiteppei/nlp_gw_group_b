@@ -1,12 +1,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 import shutil
 import tempfile
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Literal
@@ -36,6 +38,17 @@ PAGE_METADATA_FILE = DATA_DIR / "pages.json"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MiB
 DOCUMENTS_LOCK = Lock()
 PAGES_LOCK = Lock()
+
+
+@contextmanager
+def metadata_file_lock():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with (DATA_DIR / ".metadata.lock").open("a+b") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 class DocumentSummary(BaseModel):
@@ -114,6 +127,14 @@ def read_pages() -> dict[str, Page]:
     return pages
 
 
+def visible_pages() -> dict[str, Page]:
+    documents = read_documents()
+    return {
+        page_id: page for page_id, page in read_pages().items()
+        if documents.get(page.documentId, {}).get("status") == "ready"
+    }
+
+
 def validate_pagination(limit: int, offset: int) -> None:
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(
@@ -144,7 +165,7 @@ def list_pages(
     offset: int = Query(0),
 ):
     validate_pagination(limit, offset)
-    return list_result(list(read_pages().values()), limit, offset)
+    return list_result(list(visible_pages().values()), limit, offset)
 
 
 @router.post("/pages/search", response_model=PageSummaryList)
@@ -152,7 +173,7 @@ def search_pages(request: SearchRequest):
     validate_pagination(request.limit, request.offset)
     matched = []
 
-    for page in read_pages().values():
+    for page in visible_pages().values():
         doc = page.document
         searchable = " ".join(
             [doc.title, *doc.authors, page.heading, page.summary]
@@ -180,7 +201,7 @@ def search_pages(request: SearchRequest):
 
 @router.get("/pages/{pageId}", response_model=Page)
 def get_page(pageId: str):
-    page = read_pages().get(pageId)
+    page = visible_pages().get(pageId)
     if page is None:
         raise HTTPException(status_code=404, detail="Page not found")
     return page
@@ -196,7 +217,7 @@ def get_page(pageId: str):
     },
 )
 def get_page_preview(pageId: str) -> FileResponse:
-    page = read_pages().get(pageId)
+    page = visible_pages().get(pageId)
     if page is None:
         raise HTTPException(status_code=404, detail="Page not found")
 
@@ -218,10 +239,13 @@ def update_tags(pageId: str, request: TagsRequest):
             detail="Tags must be nonempty and unique",
         )
 
-    with PAGES_LOCK:
+    with PAGES_LOCK, metadata_file_lock():
         pages = read_pages()
         page = pages.get(pageId)
-        if page is None:
+        if (
+            page is None
+            or read_documents().get(page.documentId, {}).get("status") != "ready"
+        ):
             raise HTTPException(status_code=404, detail="Page not found")
         page.tags = tags
         write_pages(pages)
@@ -303,7 +327,7 @@ async def upload_document(
     saved_path = UPLOAD_DIR / f"{document_id}{suffix}"
     saved_path.write_bytes(content)
 
-    with DOCUMENTS_LOCK:
+    with DOCUMENTS_LOCK, metadata_file_lock():
         documents = read_documents()
         documents[document_id] = {
             "id": document_id,
@@ -328,7 +352,7 @@ def set_document_result(
     document_id: str, status: Literal["ready", "failed"],
     page_count: int | None = None, error: str | None = None,
 ) -> None:
-    with DOCUMENTS_LOCK:
+    with DOCUMENTS_LOCK, metadata_file_lock():
         documents = read_documents()
         document = documents.get(document_id)
         if document is None:
@@ -338,12 +362,11 @@ def set_document_result(
 
 
 def process_document(document_id: str) -> None:
-    document = read_documents().get(document_id)
-    if document is None:
-        return
-
     preview_dir = PREVIEW_DIR / document_id
     try:
+        document = read_documents().get(document_id)
+        if document is None:
+            return
         source_path = Path(document["savedPath"]).resolve()
         if (
             not source_path.is_relative_to(UPLOAD_DIR.resolve())
@@ -384,18 +407,31 @@ def process_document(document_id: str) -> None:
                 )
 
             PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+            if preview_dir.exists():
+                shutil.rmtree(preview_dir)
             staged_previews.rename(preview_dir)
-            with PAGES_LOCK:
+            with PAGES_LOCK, metadata_file_lock():
                 pages = read_pages()
+                pages = {
+                    page_id: page for page_id, page in pages.items()
+                    if page.documentId != document_id
+                }
                 pages.update(new_pages)
                 write_pages(pages)
 
         set_document_result(document_id, "ready", page_count=len(new_pages))
     except ImportFailure as exc:
-        set_document_result(document_id, "failed", error=str(exc))
+        error = str(exc)
     except Exception:
         logger.exception("Failed to import document %s", document_id)
-        set_document_result(document_id, "failed", error="資料を解析できませんでした")
+        error = "資料を解析できませんでした"
+    else:
+        return
+
+    try:
+        set_document_result(document_id, "failed", error=error)
+    except Exception:
+        logger.exception("Failed to update import status for %s", document_id)
 
 
 @router.get(
@@ -470,7 +506,7 @@ def list_document_pages(
     if documentId not in read_documents():
         raise HTTPException(status_code=404, detail="Document not found")
 
-    pages = [page for page in read_pages().values() if page.documentId == documentId]
+    pages = [page for page in visible_pages().values() if page.documentId == documentId]
     pages.sort(key=lambda page: (page.pageNumber, page.id))
     return PageSummaryList(
         items=[to_summary(page) for page in pages[offset:offset + limit]],

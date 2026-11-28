@@ -10,6 +10,10 @@ class ImportFailure(Exception):
     pass
 
 
+MAX_PAGES = 100
+MAX_PREVIEW_BYTES = 150 * 1024 * 1024
+
+
 @dataclass(frozen=True)
 class ExtractedPage:
     page_number: int
@@ -18,14 +22,14 @@ class ExtractedPage:
     image_path: Path
 
 
-def run_command(args: list[str], error_message: str) -> str:
+def run_command(args: list[str], error_message: str, timeout: int = 120) -> str:
     try:
         result = subprocess.run(
             args,
             check=True,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise ImportFailure(error_message) from exc
@@ -64,24 +68,33 @@ def extract_pages(
     if match is None or int(match.group(1)) < 1:
         raise ImportFailure("PDFにページがありません")
     page_count = int(match.group(1))
+    if page_count > MAX_PAGES:
+        raise ImportFailure(f"資料は{MAX_PAGES}ページ以下にしてください")
 
     text = run_command(
         ["pdftotext", "-layout", "-enc", "UTF-8", str(pdf_path), "-"],
         "PDFからテキストを取得できませんでした",
     )
-    preview_prefix = workspace / "preview"
-    run_command(
-        ["pdftoppm", "-png", "-r", "120", str(pdf_path), str(preview_prefix)],
-        "PDFのプレビュー画像を生成できませんでした",
-    )
-
     preview_paths: dict[int, Path] = {}
-    for path in workspace.glob("preview-*.png"):
-        page_match = re.fullmatch(r"preview-(\d+)\.png", path.name)
-        if page_match:
-            preview_paths[int(page_match.group(1))] = path
-    if len(preview_paths) != page_count:
-        raise ImportFailure("プレビュー画像のページ数が一致しません")
+    preview_bytes = 0
+    for page_number in range(1, page_count + 1):
+        preview_prefix = workspace / f"preview-{page_number}"
+        run_command(
+            [
+                "pdftoppm", "-f", str(page_number), "-l", str(page_number),
+                "-singlefile", "-png", "-scale-to", "1600",
+                str(pdf_path), str(preview_prefix),
+            ],
+            "PDFのプレビュー画像を生成できませんでした",
+            timeout=30,
+        )
+        image_path = preview_prefix.with_suffix(".png")
+        if not image_path.is_file():
+            raise ImportFailure("プレビュー画像を生成できませんでした")
+        preview_bytes += image_path.stat().st_size
+        if preview_bytes > MAX_PREVIEW_BYTES:
+            raise ImportFailure("プレビュー画像の合計サイズが上限を超えました")
+        preview_paths[page_number] = image_path
 
     text_pages = text.split("\f")
     pages = []

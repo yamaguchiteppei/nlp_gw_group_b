@@ -94,7 +94,7 @@ Backendは登録したPDF/PPTXをページ画像とテキストに変換し、�
 | `authors` | いいえ | 著者名。複数の場合は同名フィールドを繰り返す |
 | `folderPath` | いいえ | 元フォルダ名。上位から順に同名フィールドを繰り返す |
 
-ファイル形式とサイズを検証し、受け付けた場合は `202 Accepted` と `{ "id": "document-001", "status": "pending" }` を返す。取込処理の結果は `GET /api/documents/{documentId}` で `pending` / `ready` / `failed` として確認する。無効な形式は `400`、存在しないIDは `404` とする。初期実装では元ファイル・プレビューを保存領域に、資料・ページ情報をJSONに永続化する。DBへの移行は後続段階で行う。
+ファイル形式とサイズを検証し、受け付けた場合は `202 Accepted` と `{ "id": "document-001", "status": "pending" }` を返す。取込処理の結果は `GET /api/documents/{documentId}` で `pending` / `ready` / `failed` として確認する。無効な形式は `400`、存在しないIDは `404` とする。ページ数は100以下、プレビューの長辺は1600ピクセル以下、プレビュー画像の合計は150 MiB以下とし、超過時は `failed` にする。中断された `pending` の取込はAPI起動時に再開する。初期実装では元ファイル・プレビューを保存領域に、資料・ページ情報をJSONに永続化する。DBへの移行は後続段階で行う。
 
 `GET /api/documents/{documentId}` は、取込状態と結果を次の形で返す。`pageCount` は `ready` のときにページ数、それ以外は `null` とする。`error` は `failed` のときに理由を表す文字列、それ以外は `null` とする。
 

@@ -1,3 +1,6 @@
+import json
+import struct
+import time
 from pathlib import Path
 
 import pytest
@@ -48,10 +51,13 @@ def test_registered_document_has_persistent_pages_and_previews(
         "提案手法",
     ]
     page_id = listing["items"][0]["id"]
+    stored = json.loads(slide_library_api.PAGE_METADATA_FILE.read_text())
+    assert page_id in stored
     preview = client.get(f"/api/pages/{page_id}/preview")
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "image/png"
     assert preview.content.startswith(b"\x89PNG")
+    assert max(struct.unpack(">II", preview.content[16:24])) <= 1600
 
     # 新しいAPIクライアントからもファイル上のページ情報を読める。
     another_client = TestClient(app)
@@ -59,7 +65,7 @@ def test_registered_document_has_persistent_pages_and_previews(
     search = another_client.post(
         "/api/pages/search", json={"query": "研究背景"}
     ).json()
-    assert any(page["id"] == page_id for page in search["items"])
+    assert [page["id"] for page in search["items"]] == [page_id]
 
     tags = another_client.put(
         f"/api/pages/{page_id}/tags", json={"tags": ["背景"]}
@@ -69,7 +75,7 @@ def test_registered_document_has_persistent_pages_and_previews(
     tagged_search = TestClient(app).post(
         "/api/pages/search", json={"filters": {"tag": "背景"}}
     ).json()
-    assert any(page["id"] == page_id for page in tagged_search["items"])
+    assert [page["id"] for page in tagged_search["items"]] == [page_id]
 
 
 @pytest.mark.parametrize("filename, content", [
@@ -92,3 +98,52 @@ def test_failed_import_updates_status(isolated_data, filename, content) -> None:
     assert status["error"]
     assert client.get(f"/api/documents/{document_id}/pages").json()["total"] == 0
     assert client.get("/api/pages/missing/preview").status_code == 404
+
+
+def test_pending_import_resumes_after_restart(isolated_data) -> None:
+    document_id = "recover-pdf"
+    slide_library_api.UPLOAD_DIR.mkdir()
+    source_path = slide_library_api.UPLOAD_DIR / f"{document_id}.pdf"
+    source_path.write_bytes((FIXTURES / "sample.pdf").read_bytes())
+    slide_library_api.write_documents({
+        document_id: {
+            "id": document_id,
+            "status": "pending",
+            "pageCount": None,
+            "error": None,
+            "title": "再開する資料",
+            "authors": [],
+            "folderPath": [],
+            "fileName": "sample.pdf",
+            "format": "pdf",
+            "savedPath": str(source_path),
+        }
+    })
+
+    with TestClient(app) as client:
+        for _ in range(30):
+            status = client.get(f"/api/documents/{document_id}").json()
+            if status["status"] == "ready":
+                break
+            time.sleep(0.1)
+
+        assert status["status"] == "ready"
+        assert client.get(f"/api/documents/{document_id}/pages").json()["total"] == 2
+
+
+def test_failed_status_hides_stored_pages(isolated_data) -> None:
+    client = TestClient(app)
+    fixture = FIXTURES / "sample.pdf"
+    upload = client.post(
+        "/api/documents",
+        data={"title": "資料"},
+        files={"file": (fixture.name, fixture.read_bytes())},
+    )
+    document_id = upload.json()["id"]
+    page_id = client.get(f"/api/documents/{document_id}/pages").json()["items"][0]["id"]
+
+    slide_library_api.set_document_result(document_id, "failed", error="保存に失敗")
+
+    assert client.get(f"/api/documents/{document_id}/pages").json()["total"] == 0
+    assert client.get(f"/api/pages/{page_id}").status_code == 404
+    assert client.get(f"/api/pages/{page_id}/preview").status_code == 404
