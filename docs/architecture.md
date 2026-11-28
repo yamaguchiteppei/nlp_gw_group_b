@@ -38,7 +38,7 @@ PDF/PPTX本体とページのプレビューはファイル用の保存領域、
 
 開発環境ではホストの `data/` をAPIコンテナの `/data` にマウントする。手元の資料は `data/imports/` に置き、登録後の元ファイルは `/data/uploads/{documentId}.pdf` または `.pptx`、生成したプレビューは `/data/previews/{documentId}/{pageNumber}.png` に保存する。資料とページのメタデータは `/data/documents.json` と `/data/pages.json` に置き、APIにはホストの絶対パスを返さない。`data/` はGitで管理しない。
 
-Google Drive連携ではフォルダ階層を出典として保持する。フォルダは資料の所属、タグはページの内容・役割として分ける。Embeddingなどの検索用データはページIDに紐づく派生データとして追加する。
+Google Drive連携ではPDFを保存領域へ取り込み、既存のページ生成・検索処理を共用する。DriveのファイルIDとフォルダIDを出典として保持し、フォルダ名の階層を画面に表示する。資料区分・発表年は資料、スライドの役割とタグはページに保持する。Embeddingなどの検索用データはページIDに紐づく派生データとして追加する。
 
 ## 配信構成
 
