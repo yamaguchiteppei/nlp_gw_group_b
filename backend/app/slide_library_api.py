@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
+from threading import Lock
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["Slide Library"])
@@ -15,6 +18,7 @@ DATA_DIR = Path("/data")
 UPLOAD_DIR = DATA_DIR / "uploads"
 METADATA_FILE = DATA_DIR / "documents.json"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MiB
+DOCUMENTS_LOCK = Lock()
 
 
 class DocumentSummary(BaseModel):
@@ -196,6 +200,22 @@ def read_documents() -> dict:
     return json.loads(METADATA_FILE.read_text(encoding="utf-8"))
 
 
+def write_documents(documents: dict) -> None:
+    temporary_path = DATA_DIR / f".documents-{uuid.uuid4().hex}.tmp"
+    try:
+        temporary_path.write_text(
+            json.dumps(documents, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(temporary_path, METADATA_FILE)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def safe_filename(filename: str) -> str:
+    return filename.replace("\\", "/").rsplit("/", 1)[-1]
+
+
 @router.post(
     "/documents",
     status_code=202,
@@ -207,7 +227,7 @@ async def upload_document(
     authors: Annotated[list[str] | None, Form()] = None,
     folderPath: Annotated[list[str] | None, Form()] = None,
 ):
-    filename = Path(file.filename or "").name
+    filename = safe_filename(file.filename or "")
     suffix = Path(filename).suffix.lower()
 
     if suffix not in {".pdf", ".pptx"} or not title.strip():
@@ -236,24 +256,22 @@ async def upload_document(
     saved_path = UPLOAD_DIR / f"{document_id}{suffix}"
     saved_path.write_bytes(content)
 
-    documents = read_documents()
-    documents[document_id] = {
-        "id": document_id,
-        "status": "pending",
-        "pageCount": None,
-        "error": None,
-        "title": title.strip(),
-        "authors": authors or [],
-        "folderPath": folderPath or [],
-        "fileName": filename,
-        "format": suffix.lstrip("."),
-        "savedPath": str(saved_path),
-    }
+    with DOCUMENTS_LOCK:
+        documents = read_documents()
+        documents[document_id] = {
+            "id": document_id,
+            "status": "pending",
+            "pageCount": None,
+            "error": None,
+            "title": title.strip(),
+            "authors": authors or [],
+            "folderPath": folderPath or [],
+            "fileName": filename,
+            "format": suffix.lstrip("."),
+            "savedPath": str(saved_path),
+        }
 
-    METADATA_FILE.write_text(
-        json.dumps(documents, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+        write_documents(documents)
 
     return DocumentAccepted(id=document_id)
 
@@ -272,3 +290,49 @@ def get_document_status(documentId: str):
         )
 
     return DocumentStatus.model_validate(document)
+
+
+@router.get(
+    "/documents/{documentId}/source",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            }
+        },
+        404: {"description": "Document or source file not found"},
+    },
+)
+def download_document_source(documentId: str) -> FileResponse:
+    document = read_documents().get(documentId)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    source_format = document.get("format")
+    media_types = {
+        "pdf": "application/pdf",
+        "pptx": (
+            "application/vnd.openxmlformats-officedocument."
+            "presentationml.presentation"
+        ),
+    }
+    saved_path = document.get("savedPath")
+    if source_format not in media_types or not saved_path:
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    source_path = Path(saved_path).resolve()
+    if (
+        not source_path.is_relative_to(UPLOAD_DIR.resolve())
+        or not source_path.is_file()
+    ):
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    return FileResponse(
+        source_path,
+        media_type=media_types[source_format],
+        filename=safe_filename(document["fileName"]),
+        content_disposition_type="attachment",
+    )

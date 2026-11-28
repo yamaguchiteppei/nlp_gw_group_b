@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from app.slide_library_api import router as slide_library_router
 
 app = FastAPI(
