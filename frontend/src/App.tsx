@@ -375,6 +375,15 @@ function App() {
     if (history.state?.registrationBackground) history.back()
     else { const params = new URLSearchParams(location.search); params.delete('slide'); params.delete('deck'); history.replaceState(null, '', `/${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
   }
+  const openRegisteredDocument = (id: string) => {
+    history.replaceState(null, '', `/?deck=${encodeURIComponent(id)}`)
+    setRegistrationOpen(false)
+    setSelected(id)
+    setSelectedType('deck')
+    setOverlay(false)
+    setSearchStatus('loading')
+    setRetry((value) => value + 1)
+  }
 
   const sortedPages = [...pages].sort((a, b) => a.document.title.localeCompare(b.document.title, 'ja') || a.pageNumber - b.pageNumber)
   const deckMap = new Map<string, DeckResult>()
@@ -392,7 +401,7 @@ function App() {
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
   if (notFound) return <NotFoundPage />
-  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} />
+  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} onOpenDocument={openRegisteredDocument} />
 
   return <>
     <div className="app-shell" inert={Boolean(selected)}>

@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
-import { registerDocumentMock, type RegistrationDetails, type RegistrationStage } from './mockRegistration'
+import { ApiError, getDocumentStatus, registerDocument } from './libraryApi'
 import { Brand } from './Brand'
 
 const maxFileSize = 50 * 1024 * 1024
-const categories = ['研究発表', '論文読会', '研究室セミナー']
-type Phase = 'editing' | RegistrationStage | 'complete' | 'failed'
-type FormValues = { title: string; authors: string; category: string; year: string; folderPath: string }
-const emptyValues: FormValues = { title: '', authors: '', category: '', year: '', folderPath: '' }
+type Phase = 'editing' | 'uploading' | 'processing' | 'complete' | 'failed'
+type FormValues = { title: string; authors: string; folderPath: string }
+const emptyValues: FormValues = { title: '', authors: '', folderPath: '' }
 
 function titleFromFilename(filename: string) {
   return filename.replace(/\.(pptx|pdf)$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 200)
@@ -16,7 +15,16 @@ function formatSize(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function RegistrationPage({ onBack }: { onBack: () => void }) {
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
+    const timer = window.setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, ms)
+    const onAbort = () => { window.clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+export function RegistrationPage({ onBack, onOpenDocument }: { onBack: () => void; onOpenDocument: (id: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const taskRef = useRef<AbortController | null>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -24,6 +32,7 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
   const [phase, setPhase] = useState<Phase>('editing')
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [documentId, setDocumentId] = useState<string | null>(null)
 
   useEffect(() => () => taskRef.current?.abort(), [])
 
@@ -49,6 +58,7 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
     setFile(next)
     setValues({ ...emptyValues, title: titleFromFilename(next.name) })
     setPhase('editing')
+    setDocumentId(null)
     setError('')
   }
 
@@ -74,12 +84,10 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
       return
     }
 
-    const details: RegistrationDetails = {
+    const details = {
       file,
       title: values.title.trim(),
       authors: values.authors.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-      category: values.category,
-      year: values.year.trim(),
       folderPath: values.folderPath.split('/').map((item) => item.trim()).filter(Boolean),
     }
     const controller = new AbortController()
@@ -88,11 +96,29 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
     setError('')
 
     try {
-      await registerDocumentMock(details, setPhase, controller.signal)
-      setPhase('complete')
+      let id = documentId
+      if (!id) {
+        setPhase('uploading')
+        const accepted = await registerDocument(details, controller.signal)
+        id = accepted.id
+        setDocumentId(id)
+      }
+      setPhase('processing')
+      while (!controller.signal.aborted) {
+        const status = await getDocumentStatus(id, controller.signal)
+        if (status.status === 'ready') { setPhase('complete'); return }
+        if (status.status === 'failed') {
+          setDocumentId(null)
+          throw new Error(status.error || '資料を解析できませんでした。')
+        }
+        await pause(1500, controller.signal)
+      }
     } catch (cause) {
       if (!controller.signal.aborted) {
-        setError(cause instanceof Error ? cause.message : '登録に失敗しました。再試行してください。')
+        setError(cause instanceof ApiError && cause.status === 400
+          ? 'ファイル形式・サイズ・タイトルを確認してください。'
+          : cause instanceof Error && cause.message && !(cause instanceof DOMException)
+            ? cause.message : '通信に失敗しました。接続を確認して再試行してください。')
         setPhase('failed')
       }
     }
@@ -105,6 +131,7 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
     setFile(null)
     setValues(emptyValues)
     setPhase('editing')
+    setDocumentId(null)
     setError('')
     if (inputRef.current) inputRef.current.value = ''
   }
@@ -116,14 +143,11 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
     </header>
     <main className="registration-main">
       <h1>資料を登録</h1>
-      <p className="registration-demo-note">画面確認用のモックです。選択したファイルは保存されません。</p>
-
       {phase === 'complete' ? <section className="registration-complete" aria-live="polite">
         <p className="registration-kicker">完了</p>
-        <h2>登録フローを確認しました</h2>
-        <p>この画面ではファイルを保存していません。</p>
+        <h2>資料を登録しました</h2>
         <dl><dt>資料</dt><dd>{values.title}</dd><dt>ファイル</dt><dd>{file?.name}</dd></dl>
-        <div className="registration-actions"><button type="button" onClick={reset}>別の資料を試す</button><button type="button" className="registration-primary" onClick={onBack}>一覧に戻る</button></div>
+        <div className="registration-actions"><button type="button" onClick={reset}>別の資料を登録</button><button type="button" className="registration-primary" onClick={() => documentId && onOpenDocument(documentId)}>資料を見る</button></div>
       </section> : <>
         <section className="registration-section" aria-label="ファイル選択">
           <div className={`registration-dropzone${dragging ? ' is-dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false) }} onDrop={handleDrop}>
@@ -140,17 +164,15 @@ export function RegistrationPage({ onBack }: { onBack: () => void }) {
           <div className="registration-fields">
             <label className="registration-field registration-field--wide"><span>資料タイトル <b>必須</b></span><input value={values.title} required maxLength={200} disabled={busy} onChange={(event) => setValue('title', event.target.value)} /></label>
             <label className="registration-field registration-field--wide"><span>著者</span><textarea value={values.authors} rows={2} disabled={busy} placeholder={'1行に1人ずつ入力'} onChange={(event) => setValue('authors', event.target.value)} /></label>
-            <label className="registration-field"><span>資料区分</span><select value={values.category} disabled={busy} onChange={(event) => setValue('category', event.target.value)}><option value="">未設定</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
-            <label className="registration-field"><span>発表年</span><input type="number" min="1900" max="2100" value={values.year} disabled={busy} placeholder="例: 2026" onChange={(event) => setValue('year', event.target.value)} /></label>
             <label className="registration-field registration-field--wide"><span>元フォルダ</span><input value={values.folderPath} disabled={busy} placeholder="例: 論文読会 / 2026" onChange={(event) => setValue('folderPath', event.target.value)} /><small>階層は / で区切って入力</small></label>
           </div>
 
           {(busy || phase === 'failed') && <div className="registration-progress" role="status" aria-live="polite">
             {busy ? <img className="mascot mascot--progress" src="/slide-mascot.png" alt="" /> : <span className="registration-progress-mark" aria-hidden="true" />}
-            <div><strong>{phase === 'uploading' ? 'アップロード中' : phase === 'processing' ? '解析中' : '登録できませんでした'}</strong><span>{phase === 'uploading' ? 'ファイルを確認しています。' : phase === 'processing' ? 'スライドを処理しています。' : '入力内容を確認して再試行できます。'}</span></div>
+            <div><strong>{phase === 'uploading' ? 'アップロード中' : phase === 'processing' ? '解析中' : '登録できませんでした'}</strong><span>{phase === 'uploading' ? 'ファイルを送信しています。' : phase === 'processing' ? 'スライドを処理しています。' : documentId ? '資料の状態を再確認できます。' : '入力内容を確認して再試行できます。'}</span></div>
           </div>}
 
-          <div className="registration-actions"><button type="button" disabled={busy} onClick={onBack}>キャンセル</button><button type="submit" className="registration-primary" disabled={busy}>{phase === 'failed' ? '再試行する' : '登録の流れを確認'}</button></div>
+          <div className="registration-actions"><button type="button" disabled={busy} onClick={onBack}>キャンセル</button><button type="submit" className="registration-primary" disabled={busy}>{phase === 'failed' ? (documentId ? '状態を再確認' : '再試行する') : '登録する'}</button></div>
         </form>}
       </>}
     </main>

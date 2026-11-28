@@ -330,8 +330,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .detail-group dd { margin: 0; }
 .source-button { margin-top: 17px; padding: 10px 14px; border: 1px solid #9c9c9c; background: #fff; color: #333; }
 .download-error { margin: 10px 0 0; color: #843d3d; font-size: 12px; line-height: 1.5; }
-.mock-note { margin-top: 16px; color: #9a9a9a; font-size: 13px; }
-.mock-notice { padding-left: 9px; border-left: 2px solid #777; color: #666; font-size: 12px; }
 .same-deck { margin-top: 20px; padding: 20px 0 0; border-top: 1px solid #d7d7d7; }
 .section-title { display: flex; align-items: baseline; justify-content: space-between; }
 .section-title h3 { margin: 0 0 16px; font-size: 15px; }
@@ -345,7 +343,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .registration-shell { height: 100dvh; min-height: 0; overflow-y: auto; background: #f7f7f7; }
 .registration-main { width: min(860px, 100%); margin: 0 auto; padding: 50px 24px 80px; }
 .registration-main h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -.04em; }
-.registration-demo-note { margin: 13px 0 30px; padding: 10px 13px; border-left: 2px solid #777; background: #ededed; color: #555; font-size: 13px; line-height: 1.6; }
 .registration-section { border-top: 1px solid #ccc; }
 .registration-dropzone {
   display: flex;
