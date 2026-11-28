@@ -1,4 +1,5 @@
 import json
+from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,7 +44,10 @@ def test_download_returns_uploaded_source(
     assert response.content == content
     assert response.headers["content-type"] == media_type
     assert response.headers["content-disposition"].startswith("attachment;")
-    assert "filename*=utf-8''" in response.headers["content-disposition"].lower()
+    encoded_filename = response.headers["content-disposition"].split(
+        "filename*=utf-8''", 1
+    )[1]
+    assert unquote(encoded_filename) == filename
 
 
 def test_download_returns_404_for_missing_document_or_file(isolated_uploads) -> None:
@@ -81,16 +85,37 @@ def test_download_rejects_source_outside_uploads(isolated_uploads, tmp_path) -> 
     assert client.get(f"/api/documents/{document_id}/source").status_code == 404
 
 
-def test_download_uses_only_source_filename(isolated_uploads) -> None:
+@pytest.mark.parametrize(
+    "stored_filename", ["../secret.pdf", "C:\\Users\\secret.pdf"]
+)
+def test_download_uses_only_source_filename(
+    isolated_uploads, stored_filename
+) -> None:
     client = TestClient(app)
     upload = client.post(
         "/api/documents",
         data={"title": "資料"},
-        files={"file": ("../secret.pdf", b"%PDF-1.4", "application/pdf")},
+        files={"file": ("source.pdf", b"%PDF-1.4", "application/pdf")},
     )
+    document_id = upload.json()["id"]
+    documents = slide_library_api.read_documents()
+    documents[document_id]["fileName"] = stored_filename
+    slide_library_api.write_documents(documents)
 
-    response = client.get(f"/api/documents/{upload.json()['id']}/source")
+    response = client.get(f"/api/documents/{document_id}/source")
 
     assert response.status_code == 200
     assert 'filename="secret.pdf"' in response.headers["content-disposition"]
     assert "../" not in response.headers["content-disposition"]
+
+
+def test_download_openapi_uses_binary_response() -> None:
+    response = TestClient(app).get("/api/openapi.json")
+    content = response.json()["paths"]["/api/documents/{documentId}/source"]["get"][
+        "responses"
+    ]["200"]["content"]
+
+    assert content["application/octet-stream"]["schema"] == {
+        "type": "string",
+        "format": "binary",
+    }

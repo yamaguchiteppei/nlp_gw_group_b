@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Annotated, Literal
@@ -197,6 +198,22 @@ def read_documents() -> dict:
     return json.loads(METADATA_FILE.read_text(encoding="utf-8"))
 
 
+def write_documents(documents: dict) -> None:
+    temporary_path = DATA_DIR / f".documents-{uuid.uuid4().hex}.tmp"
+    try:
+        temporary_path.write_text(
+            json.dumps(documents, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(temporary_path, METADATA_FILE)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def safe_filename(filename: str) -> str:
+    return filename.replace("\\", "/").rsplit("/", 1)[-1]
+
+
 @router.post(
     "/documents",
     status_code=202,
@@ -208,7 +225,7 @@ async def upload_document(
     authors: Annotated[list[str] | None, Form()] = None,
     folderPath: Annotated[list[str] | None, Form()] = None,
 ):
-    filename = Path(file.filename or "").name
+    filename = safe_filename(file.filename or "")
     suffix = Path(filename).suffix.lower()
 
     if suffix not in {".pdf", ".pptx"} or not title.strip():
@@ -251,10 +268,7 @@ async def upload_document(
         "savedPath": str(saved_path),
     }
 
-    METADATA_FILE.write_text(
-        json.dumps(documents, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_documents(documents)
 
     return DocumentAccepted(id=document_id)
 
@@ -277,7 +291,17 @@ def get_document_status(documentId: str):
 
 @router.get(
     "/documents/{documentId}/source",
-    responses={404: {"description": "Document or source file not found"}},
+    response_class=FileResponse,
+    responses={
+        200: {
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            }
+        },
+        404: {"description": "Document or source file not found"},
+    },
 )
 def download_document_source(documentId: str) -> FileResponse:
     document = read_documents().get(documentId)
@@ -306,6 +330,6 @@ def download_document_source(documentId: str) -> FileResponse:
     return FileResponse(
         source_path,
         media_type=media_types[source_format],
-        filename=Path(document["fileName"]).name,
+        filename=safe_filename(document["fileName"]),
         content_disposition_type="attachment",
     )
