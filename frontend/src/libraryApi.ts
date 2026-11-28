@@ -35,7 +35,18 @@ export class ApiError extends Error {
 }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15_000)
+  const onAbort = () => controller.abort()
+  init?.signal?.addEventListener('abort', onAbort, { once: true })
+  if (init?.signal?.aborted) controller.abort()
+  let response: Response
+  try {
+    response = await fetch(path, { ...init, signal: controller.signal })
+  } finally {
+    window.clearTimeout(timeout)
+    init?.signal?.removeEventListener('abort', onAbort)
+  }
   if (!response.ok) throw new ApiError(response.status)
   return response.json() as Promise<T>
 }

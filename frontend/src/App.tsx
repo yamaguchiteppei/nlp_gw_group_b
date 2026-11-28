@@ -140,7 +140,7 @@ function Detail({
           setRelated(pages.sort((a, b) => a.pageNumber - b.pageNumber))
         } else {
           const pages = await getDocumentPages(id, controller.signal)
-          if (pages.length === 0) throw new ApiError(404)
+          if (pages.length === 0) { setStatus('ready'); return }
           const firstPage = await getPage(pages[0].id, controller.signal)
           if (controller.signal.aborted) return
           setPage(firstPage)
@@ -183,6 +183,7 @@ function Detail({
       <div className="detail-header"><span>Slide Library <b>/</b> {kind === 'slide' ? 'スライド詳細' : '発表資料詳細'}</span><button ref={closeRef} type="button" onClick={onClose}>{overlay ? '閉じる' : '一覧に戻る'} <span aria-hidden="true">×</span></button></div>
       {status === 'loading' && <div className="detail-message" role="status">読み込み中…</div>}
       {status === 'error' && <div className="detail-message" role="alert"><p>スライドを読み込めませんでした</p><button type="button" onClick={() => { setStatus('loading'); setRetry((value) => value + 1) }}>再試行</button></div>}
+      {status === 'ready' && !page && <div className="detail-message" role="status"><p>ページを準備中です。</p><button type="button" onClick={() => { setStatus('loading'); setRetry((value) => value + 1) }}>再読み込み</button></div>}
       {status === 'ready' && page && documentInfo && <div className="detail-main">
         <div className="detail-visual">
           <div className="detail-artwork" style={{ viewTransitionName: kind === 'slide' ? `slide-${id}` : `deck-${id}` }}><SlidePreview page={page} /></div>
@@ -232,18 +233,20 @@ function App() {
   const folderPath = filters.folderPath
 
   useEffect(() => {
+    if ((!query && !tag && !folderPath) || catalog.length) return
     const controller = new AbortController()
     void searchPages('', emptyFilters, controller.signal).then((result) => {
       if (!controller.signal.aborted) setCatalog(result)
-    }).catch(() => {})
+    }).catch(() => { /* The current results still provide filter choices. */ })
     return () => controller.abort()
-  }, [])
+  }, [query, tag, folderPath, retry, catalog.length])
 
   useEffect(() => {
     const controller = new AbortController()
     void searchPages(query, { tag, folderPath }, controller.signal).then((result) => {
       if (controller.signal.aborted) return
       setPages(result)
+      if (!query && !tag && !folderPath) setCatalog(result)
       setSearchStatus('ready')
     }).catch(() => { if (!controller.signal.aborted) setSearchStatus('error') })
     return () => controller.abort()
@@ -263,7 +266,10 @@ function App() {
     if (next.resultType) setResultType(next.resultType)
     if (next.query !== undefined) setQuery(next.query)
     if (next.filters) setFilters(next.filters)
-    if (next.query !== undefined || next.filters) setSearchStatus('loading')
+    const searchChanged = (next.query !== undefined && next.query !== query) ||
+      (next.filters !== undefined && (next.filters.tag !== filters.tag || next.filters.folderPath !== filters.folderPath))
+    if (searchChanged) setSearchStatus('loading')
+    else if (next.query !== undefined || next.filters) { setSearchStatus('loading'); setRetry((value) => value + 1) }
     setVisibleCount(6)
     resultScrollRef.current?.scrollTo(0, 0)
     history.replaceState(null, '', makeUrl(next))
@@ -371,7 +377,7 @@ function App() {
         <div className="results-frame">
           <aside className={`filter-sidebar${sidebarCollapsed ? ' filter-sidebar--collapsed' : ''}`} aria-label="絞り込み">
             <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'フィルタを開く' : 'フィルタを閉じる'} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? 'フィルタ ›' : 'フィルタ ‹'}</button>
-            {!sidebarCollapsed && <FilterControls filters={filters} pages={catalog} onChange={(next) => update({ filters: next })} />}
+            {!sidebarCollapsed && <FilterControls filters={filters} pages={catalog.length ? catalog : pages} onChange={(next) => update({ filters: next })} />}
           </aside>
           <section ref={resultsSectionRef} className="results-section" aria-label="検索結果">
             <div className="results-toolbar">
