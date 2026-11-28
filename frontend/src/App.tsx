@@ -375,12 +375,28 @@ function App() {
     if (history.state?.registrationBackground) history.back()
     else { const params = new URLSearchParams(location.search); params.delete('slide'); params.delete('deck'); history.replaceState(null, '', `/${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
   }
+  const showRegisteredInLibrary = () => {
+    history.replaceState(null, '', '/?view=decks')
+    setRegistrationOpen(false)
+    setSelected('')
+    setOverlay(false)
+    setResultType('decks')
+    setQuery('')
+    setDraft('')
+    setFilters(emptyFilters)
+    setSearchStatus('loading')
+    setRetry((value) => value + 1)
+  }
   const openRegisteredDocument = (id: string) => {
-    history.replaceState(null, '', `/?deck=${encodeURIComponent(id)}`)
+    history.replaceState(null, '', `/?view=decks&deck=${encodeURIComponent(id)}`)
     setRegistrationOpen(false)
     setSelected(id)
     setSelectedType('deck')
     setOverlay(false)
+    setResultType('decks')
+    setQuery('')
+    setDraft('')
+    setFilters(emptyFilters)
     setSearchStatus('loading')
     setRetry((value) => value + 1)
   }
@@ -401,7 +417,7 @@ function App() {
   const gridStyle = { '--grid-columns': effectiveColumns } as CSSProperties
 
   if (notFound) return <NotFoundPage />
-  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} onOpenDocument={openRegisteredDocument} />
+  if (registrationOpen) return <RegistrationPage onBack={closeRegistration} onCompleteBack={showRegisteredInLibrary} onOpenDocument={openRegisteredDocument} onRegistered={() => { setCatalog([]); setRetry((value) => value + 1) }} />
 
   return <>
     <div className="app-shell" inert={Boolean(selected)}>

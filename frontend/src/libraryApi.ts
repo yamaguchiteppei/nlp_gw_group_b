@@ -64,12 +64,13 @@ export type DocumentStatus = {
 }
 
 export function registerDocument(
-  details: { file: File; title: string; authors: string[]; folderPath: string[] },
+  details: { file: File; title: string; authors: string[]; folderPath: string[]; requestId: string },
   signal: AbortSignal,
 ): Promise<{ id: string; status: 'pending' }> {
   const body = new FormData()
   body.append('file', details.file)
   body.append('title', details.title)
+  body.append('requestId', details.requestId)
   details.authors.forEach((author) => body.append('authors', author))
   details.folderPath.forEach((folder) => body.append('folderPath', folder))
   return json('/api/documents', { method: 'POST', body, signal }, 60_000)
