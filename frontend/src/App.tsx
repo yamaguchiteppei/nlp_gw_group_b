@@ -8,6 +8,7 @@ import {
   ApiError,
   getDocumentPages,
   getPage,
+  getSourceFile,
   searchPages,
   type Page,
   type PageSummary,
@@ -119,6 +120,7 @@ function Detail({
   const shellRef = useRef<HTMLElement>(null)
   const onMissingRef = useRef(onMissing)
   const onFallbackDeckRef = useRef(onFallbackDeck)
+  const downloadControllerRef = useRef<AbortController | null>(null)
   useEffect(() => {
     onMissingRef.current = onMissing
     onFallbackDeckRef.current = onFallbackDeck
@@ -127,6 +129,9 @@ function Detail({
   const [related, setRelated] = useState<PageSummary[]>([])
   const [status, setStatus] = useState<SearchStatus>('loading')
   const [retry, setRetry] = useState(0)
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+
+  useEffect(() => () => downloadControllerRef.current?.abort(), [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -178,6 +183,28 @@ function Detail({
 
   const documentInfo = page?.document
   const selectedIndex = kind === 'slide' ? related.findIndex((item) => item.id === id) : -1
+  const downloadSource = async () => {
+    if (!documentInfo) return
+    downloadControllerRef.current?.abort()
+    const controller = new AbortController()
+    downloadControllerRef.current = controller
+    setDownloadStatus('loading')
+    try {
+      const { blob, filename } = await getSourceFile(documentInfo.id, documentInfo.fileName, controller.signal)
+      if (controller.signal.aborted) return
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      setDownloadStatus('idle')
+    } catch {
+      if (!controller.signal.aborted) setDownloadStatus('error')
+    }
+  }
   return <div className={overlay ? 'detail-backdrop' : 'detail-page'} onMouseDown={(event) => { if (overlay && event.target === event.currentTarget) onClose() }}>
     <section ref={shellRef} className="detail-shell" role={overlay ? 'dialog' : undefined} aria-modal={overlay ? true : undefined} aria-label="資料の詳細">
       <div className="detail-header"><span>Slide Library <b>/</b> {kind === 'slide' ? 'スライド詳細' : '発表資料詳細'}</span><button ref={closeRef} type="button" onClick={onClose}>{overlay ? '閉じる' : '一覧に戻る'} <span aria-hidden="true">×</span></button></div>
@@ -199,6 +226,8 @@ function Detail({
           {kind === 'slide' && page.summary && <p className="detail-summary">{page.summary}</p>}
           <div className="detail-group"><h3>出典と文脈</h3><dl><dt>元資料</dt><dd>{documentInfo.title}</dd><dt>著者</dt><dd>{documentInfo.authors.join('、') || '未登録'}</dd><dt>元フォルダ</dt><dd>{documentInfo.folderPath.join(' / ') || '未登録'}</dd><dt>登録形式</dt><dd>{documentInfo.format.toUpperCase()}</dd></dl></div>
           {kind === 'slide' && page.tags.length > 0 && <div className="detail-group"><h3>タグ</h3><p>{page.tags.join('、')}</p></div>}
+          <button type="button" className="source-button" disabled={downloadStatus === 'loading'} onClick={() => { void downloadSource() }}>{downloadStatus === 'loading' ? 'ダウンロードを準備中…' : '元資料全体をダウンロード'}</button>
+          {downloadStatus === 'error' && <p className="download-error" role="alert">元資料を取得できませんでした。再試行してください。</p>}
         </aside>
       </div>}
     </section>
