@@ -2,7 +2,7 @@
 
 ## 構成
 
-フロントエンドはReact/Vite・TypeScript、バックエンドはPython/FastAPIを第一候補とする。フェーズ1からHTTP APIを置き、フロントエンドはAPI経由で一覧・詳細を表示する。
+フロントエンドはReact/Vite・TypeScript、バックエンドはPython/FastAPIで構成する。フロントエンドはHTTP API経由で一覧・詳細を表示する。
 
 ```mermaid
 flowchart LR

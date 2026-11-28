@@ -24,13 +24,13 @@ Docker Composeでフロントエンドとバックエンドを起動する。
 docker compose up --build
 ```
 
-画面は `http://localhost:3000`、APIの接続確認は `http://localhost:3000/api/health`、API仕様の確認は `http://localhost:3000/api/docs` で行う。停止する場合は `docker compose down` を実行する。ホスト側に公開する開発用ポートは `127.0.0.1:3000` のみとする。現在のAPI実装は接続確認用のヘルスチェックのみである。
+画面は `http://localhost:3000`、APIの接続確認は `http://localhost:3000/api/health`、API仕様の確認は `http://localhost:3000/api/docs` で行う。停止する場合は `docker compose down` を実行する。ホスト側に公開する開発用ポートは `127.0.0.1:3000` のみとする。現在はPDF/PPTXの登録、ページ画像の生成、一覧・検索・詳細表示、元資料のダウンロードに対応している。
 
 バックエンドのPython依存関係は `backend/pyproject.toml` と `backend/uv.lock` で管理し、コンテナのビルド時に `uv sync --locked` でインストールする。
 
-バックエンドのチェックは `docker compose exec api ruff check .` と `docker compose exec api pytest` で実行できる。
+バックエンドのチェックは `docker compose exec api uv run --group dev ruff check .` と `docker compose exec api uv run --group dev pytest -q` で実行できる。フロントエンドは `frontend/` で `npm run lint` と `npm run build` を実行する。
 
-ローカルのPDF/PPTXは `data/imports/` に配置できる。`data/` はGitの管理対象外で、バックエンドには `/data` としてマウントされる。現時点ではファイルを置いても自動登録はされない。
+PDF/PPTXは画面から登録できる。検証用ファイルを `data/imports/` に配置することもできるが、置くだけでは自動登録されない。`data/` はGitの管理対象外で、バックエンドには `/data` としてマウントされる。認証・資料ごとの権限制御は未実装のため、実資料の登録前に[対応Issue](https://github.com/yamaguchiteppei/nlp_gw_group_b/issues/30)を完了する。
 
 ## 機能の展開
 

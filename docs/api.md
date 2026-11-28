@@ -1,6 +1,6 @@
-# API仕様案
+# API仕様
 
-ベースパスは `/api`。フェーズ1からPythonバックエンドにHTTP APIを置き、登録・一覧・詳細・簡単な検索を提供する。FastAPIを採用する場合は生成されるOpenAPIとSwagger UIでリクエスト・レスポンスを確認する。
+ベースパスは `/api`。Python/FastAPIで登録・一覧・詳細・簡単な検索を提供する。実装済みのリクエスト・レスポンスは `/api/docs` のOpenAPIとSwagger UIでも確認できる。後半の解析情報などは将来の設計案である。
 
 ## ページの一覧・検索・表示（フェーズ1）
 
@@ -98,6 +98,8 @@ Backendは登録したPDF/PPTXをページ画像とテキストに変換し、�
 ファイル形式とサイズを検証し、受け付けた場合は `202 Accepted` と `{ "id": "document-001", "status": "pending" }` を返す。取込処理の結果は `GET /api/documents/{documentId}` で `pending` / `ready` / `failed` として確認する。無効な形式は `400`、存在しないIDは `404` とする。ページ数は100以下、プレビューの長辺は1600ピクセル以下、プレビュー画像の合計は150 MiB以下とし、超過時は `failed` にする。中断された `pending` の取込はAPI起動時に再開する。初期実装では元ファイル・プレビューを保存領域に、資料・ページ情報をJSONに永続化する。DBへの移行は後続段階で行う。
 
 `requestId` を指定した再送では、ファイル内容と登録情報が同じなら既存の資料IDを返す。異なる内容に同じIDを使った場合は `409` を返す。
+
+登録できるファイルは50 MiB以下のPDF/PPTXとする。
 
 `GET /api/documents/{documentId}` は、取込状態と結果を次の形で返す。`pageCount` は `ready` のときにページ数、それ以外は `null` とする。`error` は `failed` のときに理由を表す文字列、それ以外は `null` とする。
 
