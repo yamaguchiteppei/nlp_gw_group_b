@@ -336,3 +336,23 @@ def download_document_source(documentId: str) -> FileResponse:
         filename=safe_filename(document["fileName"]),
         content_disposition_type="attachment",
     )
+
+
+@router.get("/documents/{documentId}/pages", response_model=PageSummaryList)
+def list_document_pages(
+    documentId: str,
+    limit: int = Query(20),
+    offset: int = Query(0),
+):
+    validate_pagination(limit, offset)
+    pages = [page for page in PAGES.values() if page.documentId == documentId]
+    if not pages and documentId not in read_documents():
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    pages.sort(key=lambda page: (page.pageNumber, page.id))
+    return PageSummaryList(
+        items=[to_summary(page) for page in pages[offset:offset + limit]],
+        total=len(pages),
+        limit=limit,
+        offset=offset,
+    )
