@@ -28,9 +28,9 @@ Google Drive連携やEmbedding検索は後続段階で扱う。実ファイル�
 
 ## ブラウザからのアクセスと更新系API
 
-ローカルホストへのバインドやネットワーク上のアクセス制限だけに、資料の保護を依存させない。実ファイルを扱う前に認証・認可を設け、一覧・詳細・プレビュー・元ファイル取得にも資料ごとの閲覧権限を適用する。
+初期運用では、アプリにアクセスできる研究室メンバー全員が登録済み資料を閲覧できる共有ライブラリとする。資料ごとの閲覧権限は初期対象に含めない。実資料を扱う前に、アプリへアクセスできる利用者の範囲と、登録・タグ編集の権限を確認する。異なる共有範囲の資料を扱う段階では、一覧・検索・詳細・プレビュー・元ファイル取得のすべてに資料ごとの閲覧権限を適用する。
 
-`POST /api/documents` や `PUT /api/pages/{pageId}/tags` などの更新系APIをブラウザから利用する際は、認証方式に合わせてCSRF対策を実装する。Cookieで認証する場合はCSRFトークンの検証を基本とし、送信元Originの確認とCookieの `SameSite` 設定も行う。エージェントの認証方式はブラウザのセッションとは分けて設計する。CORS設定だけをCSRF対策として扱わず、GETでは状態を変更しない。詳細は[OWASPのCSRF対策ガイド](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)を参照する。
+`POST /api/documents` や `PUT /api/pages/{pageId}/tags` などの更新系APIをブラウザから利用する際は、採用するアクセス制御方式に合わせてCSRF対策を実装する。Cookieで認証する場合はCSRFトークンの検証を基本とし、送信元Originの確認とCookieの `SameSite` 設定も行う。エージェントの認証方式はブラウザのセッションとは分けて設計する。CORS設定だけをCSRF対策として扱わず、GETでは状態を変更しない。詳細は[OWASPのCSRF対策ガイド](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)を参照する。
 
 ## データ処理
 
