@@ -24,13 +24,15 @@ flowchart LR
 - ページ一覧・詳細を返すAPIと、文字列・著者・タグ・元フォルダによる簡単な絞り込み
 - 一覧・詳細画面と、検索結果がない場合の表示
 
-Google Drive連携やEmbedding検索は後続段階で扱う。実ファイルを使う前に、登録・閲覧権限と元資料の共有条件を設計する。
+Google Drive連携やEmbedding検索は後続段階で扱う。実ファイルを使う前に、配信先の到達範囲と元資料の共有条件を確認する。
 
 ## ブラウザからのアクセスと更新系API
 
-初期運用では、承認された研究室メンバー全員が登録済み資料を閲覧できる共有ライブラリとする。資料ごとの閲覧権限は初期対象に含めない。現在のAPIには利用者の認証・権限判定がないため、実資料を扱う前に、一覧・検索・詳細・プレビュー・元ファイル取得と、登録・タグ編集の各APIで、許可された利用者だけが操作できる制御を設けて検証する。異なる共有範囲の資料を扱う段階では、閲覧系APIにも資料ごとの権限判定を追加する。
+初期運用は、到達を認められた研究室メンバー全員が資料を閲覧・登録・編集できる共有ライブラリとする。アプリ内の利用者アカウントや資料ごとの権限判定は設けず、配信先の到達範囲を運用で制限する。接続経路や内部ネットワークの手順は公開リポジトリに記載しない。異なる共有範囲の資料を扱う場合は、資料単位の権限設計を改めて行う。
 
-`POST /api/documents` や `PUT /api/pages/{pageId}/tags` などの更新系APIをブラウザから利用する際は、採用するアクセス制御方式に合わせてCSRF対策を実装する。Cookieで認証する場合はCSRFトークンの検証を基本とし、送信元Originの確認とCookieの `SameSite` 設定も行う。エージェントの認証方式はブラウザのセッションとは分けて設計する。CORS設定だけをCSRF対策として扱わず、GETでは状態を変更しない。詳細は[OWASPのCSRF対策ガイド](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)を参照する。
+画面とAPIは同一オリジンで提供するため、現行構成にCORS許可設定は不要である。CORSは更新リクエストの安全性を保証しない。`POST /api/documents`、`PUT /api/pages/{pageId}/tags`、後続のメタデータ更新・Drive取り込みなどの状態変更APIでは、別サイトからのフォーム送信も含めて拒否できるCSRF対策を実装する。送信元Originの検証とカスタムヘッダーの要求を基本案とし、ブラウザ以外のAPIクライアントとSwagger UIの利用も確認する。GETでは状態を変更しない。[OWASPのCSRF対策ガイド](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)を参照する。
+
+想定外のHostヘッダーを拒否し、アップロードは解析処理へ渡す前のリクエスト受信時にも容量を制限する。現在のファイルサイズ・ページ数・変換時間の上限に加え、連続登録時の保存容量と処理数を確認する。[OWASPのFastAPIセキュリティガイド](https://cheatsheetseries.owasp.org/cheatsheets/FastAPI_Security_Cheat_Sheet.html)を参照する。
 
 ## データ処理
 

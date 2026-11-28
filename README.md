@@ -32,7 +32,7 @@ docker compose up --build
 
 バックエンドのチェックは `docker compose exec api uv run --group dev ruff check .` と `docker compose exec api uv run --group dev pytest -q` で実行できる。フロントエンドは `frontend/` で `npm run lint` と `npm run build` を実行する。
 
-PDF/PPTXは画面から登録できる。検証用ファイルを `data/imports/` に配置することもできるが、置くだけでは自動登録されない。`data/` はGitの管理対象外で、バックエンドには `/data` としてマウントされる。初期運用では承認された研究室メンバー全員が登録済み資料を閲覧できる想定とする。現在のAPIには利用者の認証・権限判定がないため、実資料の登録前に、閲覧・登録・編集を許可された利用者だけが実行できる制御を[Issue #30](https://github.com/yamaguchiteppei/nlp_gw_group_b/issues/30)で整える。
+PDF/PPTXは画面から登録できる。検証用ファイルを `data/imports/` に配置することもできるが、置くだけでは自動登録されない。`data/` はGitの管理対象外で、バックエンドには `/data` としてマウントされる。初期運用では研究室メンバーが資料の閲覧・登録・編集を共通で行う。実資料を扱う前に、配信先の到達範囲とブラウザからの更新リクエストの保護を[Issue #30](https://github.com/yamaguchiteppei/nlp_gw_group_b/issues/30)で確認する。
 
 ## 機能の展開
 
