@@ -23,7 +23,7 @@ export type PageSummary = {
 
 export type Page = Omit<PageSummary, 'document'> & { document: DocumentDetail }
 type PageList = { items: PageSummary[]; total: number; limit: number; offset: number }
-export type SearchFilters = { tag: string; folderPath: string }
+export type SearchFilters = { tag: string; folderPath: string; author: string }
 
 export class ApiError extends Error {
   status: number
@@ -97,7 +97,7 @@ export function searchPages(
   filters: SearchFilters,
   signal: AbortSignal,
 ): Promise<PageSummary[]> {
-  if (!query.trim() && !filters.tag && !filters.folderPath) {
+  if (!query.trim() && !filters.tag && !filters.folderPath && !filters.author) {
     return collectPages(
       (offset) => `/api/pages?limit=100&offset=${offset}`,
       () => ({ signal }),
@@ -113,6 +113,7 @@ export function searchPages(
         filters: {
           ...(filters.tag ? { tag: filters.tag } : {}),
           ...(filters.folderPath ? { folderPath: filters.folderPath } : {}),
+          ...(filters.author ? { author: filters.author } : {}),
         },
         limit: 100,
         offset,

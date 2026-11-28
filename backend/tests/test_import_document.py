@@ -56,7 +56,11 @@ def test_registered_document_has_persistent_pages_and_previews(
     fixture = FIXTURES / f"sample.{format}"
     upload = client.post(
         "/api/documents",
-        data={"title": "合成研究発表", "authors": "研究者"},
+        data={
+            "title": "合成研究発表",
+            "authors": "研究者",
+            "folderPath": "論文読み会",
+        },
         files={"file": (fixture.name, fixture.read_bytes())},
     )
 
@@ -104,6 +108,23 @@ def test_registered_document_has_persistent_pages_and_previews(
         "/api/pages/search", json={"filters": {"tag": "背景"}}
     ).json()
     assert [page["id"] for page in tagged_search["items"]] == [page_id]
+
+    by_author = TestClient(app).post(
+        "/api/pages/search",
+        json={
+            "query": "研究背景",
+            "filters": {
+                "author": "研究者",
+                "tag": "背景",
+                "folderPath": "論文読み会",
+            },
+        },
+    ).json()
+    assert [page["id"] for page in by_author["items"]] == [page_id]
+    missing_author = TestClient(app).post(
+        "/api/pages/search", json={"filters": {"author": "別の著者"}}
+    ).json()
+    assert missing_author["total"] == 0
 
 
 @pytest.mark.parametrize("filename, content", [

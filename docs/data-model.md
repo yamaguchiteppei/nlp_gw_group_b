@@ -7,7 +7,7 @@
 | 資料 `Document` | `id`, `title`, `authors[]`, `fileName`, `format`, `folderPath[]`。将来、`category`, `presentationYear` も追加 | 元ファイルと全ページに共通する情報 |
 | ページ `Page` | `id`, `documentId`, `pageNumber`, `heading`, `summary`, `tags[]`, `previewUrl` | 検索結果・詳細表示の単位。API応答では `document` に資料情報も含める |
 
-`Document.id` は登録したPDF/PPTXの資料全体のID、`Page.id` は1ページのIDとする。どちらもファイル名やページ番号から作らない安定した識別子とする。`Page.documentId` で資料全体に紐づけ、`pageNumber` はその資料内で1始まりとする。`format` は `pdf` または `pptx`。著者が不明なら空配列、見出し・概要が不明なら空文字列を使う。著者は資料に、役割を表すタグはページに付ける。
+`Document.id` は登録したPDF/PPTXの資料全体のID、`Page.id` は1ページのIDとする。どちらもファイル名やページ番号から作らない安定した識別子とする。`Page.documentId` で資料全体に紐づけ、`pageNumber` はその資料内で1始まりとする。`format` は `pdf` または `pptx`。著者が不明なら空配列、見出し・概要が不明なら空文字列を使う。著者は資料に、役割を表すタグはページに付ける。著者フィルタは `authors[]` 内の名前との完全一致で資料に属するページを絞り込む。
 
 ページは `documentId` で資料に紐づく。APIの `Page` 応答には、資料情報を `document` として含め、`document.id` と `documentId` を一致させる。一覧・検索では候補選択用の `PageSummary` を返す。取込直後のページのタグは空配列とし、後からページ単位で付与・修正する。
 
