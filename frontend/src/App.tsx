@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
-import { SlideArtwork } from './SlideArtwork'
-import { RegistrationPage } from './RegistrationPage'
 import { Brand } from './Brand'
 import { NotFoundPage } from './NotFoundPage'
-import { deckById, decks, slides, type Deck, type Slide } from './mockData'
+import { RegistrationPage } from './RegistrationPage'
+import { SlidePreview } from './SlidePreview'
+import {
+  ApiError,
+  getDocumentPages,
+  getPage,
+  searchPages,
+  type Page,
+  type PageSummary,
+  type SearchFilters,
+} from './libraryApi'
 
 type ResultType = 'slides' | 'decks'
 type SearchStatus = 'ready' | 'loading' | 'error'
-type Filters = { category: string; author: string; year: string; role: string }
-const emptyFilters: Filters = { category: '', author: '', year: '', role: '' }
-const authors = [...new Set(decks.flatMap((deck) => deck.authors))].sort((a, b) => a.localeCompare(b, 'ja'))
-const years = [...new Set(decks.map((deck) => deck.year))].sort((a, b) => b - a)
-const roles = [...new Set(slides.map((slide) => slide.role))]
+type DeckResult = { id: string; title: string; pages: PageSummary[] }
+const emptyFilters: SearchFilters = { tag: '', folderPath: '' }
 
 function runViewTransition(change: () => void): Promise<void> {
   if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -23,40 +28,32 @@ function runViewTransition(change: () => void): Promise<void> {
 }
 
 function readUrl() {
-  const p = new URLSearchParams(location.search)
-  const demo = p.get('demo')
-  const searchStatus: SearchStatus = demo === 'loading' || demo === 'error' ? demo : 'ready'
-  const slideId = p.get('slide')
-  const deckId = p.get('deck')
-  const selectedSlide = slideId && slides.some((slide) => slide.id === slideId) ? slideId : ''
-  const selectedDeck = deckId && deckById.has(deckId) && slides.some((slide) => slide.deckId === deckId) ? deckId : ''
+  const params = new URLSearchParams(location.search)
+  const slide = params.get('slide')
+  const deck = params.get('deck')
   return {
-    query: p.get('q') ?? '',
-    resultType: p.get('view') === 'decks' ? 'decks' as ResultType : 'slides' as ResultType,
-    sort: p.get('sort') === 'newest' ? 'newest' : 'default',
-    filters: { category: p.get('category') ?? '', author: p.get('author') ?? '', year: p.get('year') ?? '', role: p.get('role') ?? '' },
-    selected: selectedSlide || selectedDeck,
-    selectedType: selectedSlide ? 'slide' as const : 'deck' as const,
-    searchStatus,
+    query: params.get('q') ?? '',
+    resultType: params.get('view') === 'decks' ? 'decks' as ResultType : 'slides' as ResultType,
+    filters: { tag: params.get('tag') ?? '', folderPath: params.get('folderPath') ?? '' },
+    selected: slide || deck || '',
+    selectedType: slide ? 'slide' as const : 'deck' as const,
   }
 }
 
 function isNotFoundRoute() {
-  if (location.pathname === '/register') return false
-  if (location.pathname !== '/') return true
-  const params = new URLSearchParams(location.search)
-  if (!params.has('slide') && !params.has('deck')) return false
-  return !readUrl().selected
+  return location.pathname !== '/' && location.pathname !== '/register'
+}
+
+function displayHeading(page: PageSummary) {
+  return page.heading || `p.${page.pageNumber} · 見出しなし`
 }
 
 function SearchSkeleton({ gridStyle }: { gridStyle: CSSProperties }) {
   return <div className="search-loading" role="status" aria-live="polite">
-    <span className="search-loading-label">検索中…</span>
+    <span className="search-loading-label">読み込み中…</span>
     <div className="result-grid" style={gridStyle} aria-hidden="true">
       {Array.from({ length: 6 }, (_, index) => <div className="result-skeleton" key={index}>
-        <div className="result-skeleton-image" />
-        <div className="result-skeleton-title" />
-        <div className="result-skeleton-meta" />
+        <div className="result-skeleton-image" /><div className="result-skeleton-title" /><div className="result-skeleton-meta" />
       </div>)}
     </div>
   </div>
@@ -73,91 +70,136 @@ function SearchMessage(props: SearchMessageProps) {
   </div>
 }
 
-function FilterControls({ filters, onChange }: { filters: Filters; onChange: (next: Filters) => void }) {
-  const fields = [
-    { key: 'category', label: '資料区分', values: ['研究発表', '論文読会', '研究室セミナー'] },
-    { key: 'author', label: '著者', values: authors },
-    { key: 'year', label: '発表年', values: years.map(String) },
-    { key: 'role', label: 'スライドの役割', values: roles },
-  ] as const
+function FilterControls({
+  filters, pages, onChange,
+}: { filters: SearchFilters; pages: PageSummary[]; onChange: (next: SearchFilters) => void }) {
+  const tags = [...new Set(pages.flatMap((page) => page.tags))].sort((a, b) => a.localeCompare(b, 'ja'))
+  const folders = [...new Set(pages.flatMap((page) => page.document.folderPath.map((_, index) => page.document.folderPath.slice(0, index + 1).join('/'))))].sort((a, b) => a.localeCompare(b, 'ja'))
   return <div className="filter-controls">
-    {fields.map(({ key, label, values }) => <label className="filter-field" key={key}>
-      <span className="sr-only">{label}</span><select value={filters[key]} onChange={(e) => onChange({ ...filters, [key]: e.target.value })}>
-        <option value="">{label}</option>{values.map((value) => <option key={value} value={value}>{value}</option>)}
-      </select>
-    </label>)}
+    <label className="filter-field"><span className="sr-only">元フォルダ</span><select value={filters.folderPath} onChange={(event) => onChange({ ...filters, folderPath: event.target.value })}>
+      <option value="">元フォルダ</option>{folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+    </select></label>
+    <label className="filter-field"><span className="sr-only">タグ</span><select value={filters.tag} onChange={(event) => onChange({ ...filters, tag: event.target.value })}>
+      <option value="">タグ</option>{tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+    </select></label>
   </div>
 }
 
-function matches(slide: Slide, query: string, filters: Filters) {
-  const deck = deckById.get(slide.deckId)!
-  const haystack = [slide.heading, slide.summary, slide.role, slide.visualType, ...slide.tags, deck.title, ...deck.authors, deck.folder].join(' ').normalize('NFKC').toLocaleLowerCase('ja')
-  const words = query.normalize('NFKC').toLocaleLowerCase('ja').trim().split(/\s+/).filter(Boolean)
-  return words.every((word) => haystack.includes(word)) &&
-    (!filters.category || deck.category === filters.category) &&
-    (!filters.author || deck.authors.includes(filters.author)) &&
-    (!filters.year || String(deck.year) === filters.year) &&
-    (!filters.role || slide.role === filters.role)
-}
-
-function ResultCard({ slide, deck, onClick, activeTransitionName }: { slide?: Slide; deck: Deck; onClick: () => void; activeTransitionName: string }) {
-  const imageSlide = slide ?? slides.find((item) => item.deckId === deck.id)!
-  const transitionName = slide ? `slide-${slide.id}` : `deck-${deck.id}`
-  return <button type="button" className="result-card" onClick={onClick} aria-label={`${slide?.heading ?? deck.title}の詳細を開く`}>
-    <div className="thumbnail" style={{ viewTransitionName: activeTransitionName === transitionName ? transitionName : 'none' }}><SlideArtwork slide={imageSlide} /></div>
+function ResultCard({
+  page, deck, onClick, activeTransitionName,
+}: { page?: PageSummary; deck?: DeckResult; onClick: () => void; activeTransitionName: string }) {
+  const preview = page ?? deck?.pages[0]
+  if (!preview) return null
+  const transitionName = page ? `slide-${page.id}` : `deck-${deck!.id}`
+  const title = page ? displayHeading(page) : deck!.title
+  const authors = preview.document.authors.join('・')
+  return <button type="button" className="result-card" onClick={onClick} aria-label={`${title}の詳細を開く`}>
+    <div className="thumbnail" style={{ viewTransitionName: activeTransitionName === transitionName ? transitionName : 'none' }}><SlidePreview page={preview} /></div>
     <div className="card-copy">
-      <div className="card-heading">{slide?.heading ?? deck.title}</div>
-      <div className="card-deck" title={slide ? deck.title : deck.category}>{slide ? deck.title : deck.category}</div>
-      <div className="card-meta">{deck.authors.join('・')} · {deck.year}{slide ? ` · p.${slide.pageNumber}` : ''}</div>
-      {slide && <div className="card-secondary"><span>{slide.role}</span></div>}
+      <div className="card-heading">{title}</div>
+      {page && <div className="card-deck" title={preview.document.title}>{preview.document.title}</div>}
+      <div className="card-meta">{authors}{authors && page ? ' · ' : ''}{page ? `p.${page.pageNumber}` : `一致 ${deck!.pages.length}ページ`}</div>
+      {page && page.tags.length > 0 && <div className="card-secondary"><span>{page.tags.join(' · ')}</span></div>}
     </div>
   </button>
 }
 
-function Detail({ id, kind, overlay, onClose, onSelectSlide }: { id: string; kind: 'slide' | 'deck'; overlay: boolean; onClose: () => void; onSelectSlide: (id: string) => void }) {
+function Detail({
+  id, kind, overlay, onClose, onSelectSlide, onMissing, onFallbackDeck,
+}: {
+  id: string
+  kind: 'slide' | 'deck'
+  overlay: boolean
+  onClose: () => void
+  onSelectSlide: (id: string) => void
+  onMissing: () => void
+  onFallbackDeck: (id: string) => void
+}) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const shellRef = useRef<HTMLElement>(null)
-  const [notice, setNotice] = useState('')
-  const slide = kind === 'slide' ? slides.find((item) => item.id === id) : undefined
-  const deck = kind === 'deck' ? deckById.get(id) : slide ? deckById.get(slide.deckId) : undefined
-  const related = deck ? slides.filter((item) => item.deckId === deck.id).sort((a, b) => a.pageNumber - b.pageNumber) : []
+  const onMissingRef = useRef(onMissing)
+  const onFallbackDeckRef = useRef(onFallbackDeck)
+  useEffect(() => {
+    onMissingRef.current = onMissing
+    onFallbackDeckRef.current = onFallbackDeck
+  }, [onMissing, onFallbackDeck])
+  const [page, setPage] = useState<Page | null>(null)
+  const [related, setRelated] = useState<PageSummary[]>([])
+  const [status, setStatus] = useState<SearchStatus>('loading')
+  const [retry, setRetry] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        if (kind === 'slide') {
+          const selectedPage = await getPage(id, controller.signal)
+          const pages = await getDocumentPages(selectedPage.documentId, controller.signal)
+          if (controller.signal.aborted) return
+          setPage(selectedPage)
+          setRelated(pages.sort((a, b) => a.pageNumber - b.pageNumber))
+        } else {
+          const pages = await getDocumentPages(id, controller.signal)
+          if (pages.length === 0) throw new ApiError(404)
+          const firstPage = await getPage(pages[0].id, controller.signal)
+          if (controller.signal.aborted) return
+          setPage(firstPage)
+          setRelated(pages.sort((a, b) => a.pageNumber - b.pageNumber))
+        }
+        setStatus('ready')
+      } catch (error) {
+        if (controller.signal.aborted) return
+        if (error instanceof ApiError && error.status === 404 && kind === 'slide') {
+          const fallback = new URLSearchParams(location.search).get('deck')
+          if (fallback) { onFallbackDeckRef.current(fallback); return }
+        }
+        if (error instanceof ApiError && error.status === 404 && !overlay) onMissingRef.current()
+        else setStatus('error')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [id, kind, overlay, retry])
 
   useEffect(() => {
     closeRef.current?.focus()
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      if (e.key !== 'Tab' || !overlay || !shellRef.current) return
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Tab' || !overlay || !shellRef.current) return
       const focusable = [...shellRef.current.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose, overlay])
 
-  if (!deck || (!slide && related.length === 0)) return null
-  return <div className={overlay ? 'detail-backdrop' : 'detail-page'} onMouseDown={(e) => { if (overlay && e.target === e.currentTarget) onClose() }}>
-    <section ref={shellRef} className="detail-shell" role={overlay ? 'dialog' : undefined} aria-modal={overlay ? true : undefined} aria-label={`${slide?.heading ?? deck.title}の詳細`}>
-      <div className="detail-header"><span>Slide Library <b>/</b> {slide ? 'スライド詳細' : '発表資料詳細'}</span><button ref={closeRef} type="button" onClick={onClose}>{overlay ? '閉じる' : '一覧に戻る'} <span aria-hidden="true">×</span></button></div>
-      <div className="detail-main">
-        <div className="detail-visual"><div className="detail-artwork" style={{ viewTransitionName: slide ? `slide-${slide.id}` : `deck-${deck.id}` }}><SlideArtwork slide={slide ?? related[0]} /></div>
-          {slide && <div className="slide-navigation"><span>同じ資料の前後のページ</span><div>
-            <button type="button" disabled={related.indexOf(slide) === 0} onClick={() => onSelectSlide(related[related.indexOf(slide) - 1].id)}>前へ</button>
-            <button type="button" disabled={related.indexOf(slide) === related.length - 1} onClick={() => onSelectSlide(related[related.indexOf(slide) + 1].id)}>次へ</button>
+  const documentInfo = page?.document
+  const selectedIndex = kind === 'slide' ? related.findIndex((item) => item.id === id) : -1
+  return <div className={overlay ? 'detail-backdrop' : 'detail-page'} onMouseDown={(event) => { if (overlay && event.target === event.currentTarget) onClose() }}>
+    <section ref={shellRef} className="detail-shell" role={overlay ? 'dialog' : undefined} aria-modal={overlay ? true : undefined} aria-label="資料の詳細">
+      <div className="detail-header"><span>Slide Library <b>/</b> {kind === 'slide' ? 'スライド詳細' : '発表資料詳細'}</span><button ref={closeRef} type="button" onClick={onClose}>{overlay ? '閉じる' : '一覧に戻る'} <span aria-hidden="true">×</span></button></div>
+      {status === 'loading' && <div className="detail-message" role="status">読み込み中…</div>}
+      {status === 'error' && <div className="detail-message" role="alert"><p>スライドを読み込めませんでした</p><button type="button" onClick={() => { setStatus('loading'); setRetry((value) => value + 1) }}>再試行</button></div>}
+      {status === 'ready' && page && documentInfo && <div className="detail-main">
+        <div className="detail-visual">
+          <div className="detail-artwork" style={{ viewTransitionName: kind === 'slide' ? `slide-${id}` : `deck-${id}` }}><SlidePreview page={page} /></div>
+          {kind === 'slide' && <div className="slide-navigation"><span>同じ資料の前後のページ</span><div>
+            <button type="button" disabled={selectedIndex <= 0} onClick={() => onSelectSlide(related[selectedIndex - 1].id)}>前へ</button>
+            <button type="button" disabled={selectedIndex < 0 || selectedIndex >= related.length - 1} onClick={() => onSelectSlide(related[selectedIndex + 1].id)}>次へ</button>
           </div></div>}
-          <div className="same-deck"><div className="section-title"><h3>同じ資料の他のページ</h3><span>{related.length}件のサンプル</span></div><div className="same-deck-row">
-            {related.map((item) => <button type="button" key={item.id} className={`related-card ${slide?.id === item.id ? 'is-current' : ''}`} onClick={() => onSelectSlide(item.id)} aria-current={slide?.id === item.id ? 'page' : undefined}><SlideArtwork slide={item} /><span>p.{item.pageNumber} · {item.heading}</span></button>)}
+          <div className="same-deck"><div className="section-title"><h3>同じ資料の他のページ</h3><span>{related.length}ページ</span></div><div className="same-deck-row">
+            {related.map((item) => <button type="button" key={item.id} className={`related-card ${kind === 'slide' && id === item.id ? 'is-current' : ''}`} onClick={() => onSelectSlide(item.id)} aria-current={kind === 'slide' && id === item.id ? 'page' : undefined}><SlidePreview page={item} /><span>p.{item.pageNumber} · {item.heading || '見出しなし'}</span></button>)}
           </div></div>
         </div>
-        <aside className="detail-facts"><p className="eyebrow">{slide ? `SLIDE · P.${slide.pageNumber}` : `DOCUMENT · ${related.length} PAGES`}</p><h2>{slide?.heading ?? deck.title}</h2><p className="detail-summary">{slide?.summary ?? deck.note}</p>
-          <div className="detail-group"><h3>出典と文脈</h3><dl><dt>元資料</dt><dd>{deck.title}</dd><dt>著者</dt><dd>{deck.authors.join('、')}</dd><dt>発表</dt><dd>{deck.year} · {deck.category}</dd><dt>元フォルダ</dt><dd>{deck.folder}</dd><dt>登録形式</dt><dd>{deck.sourceFormat}</dd></dl></div>
-          {slide && <div className="detail-group"><h3>表現と構成 <span>仮分析</span></h3><dl><dt>役割</dt><dd>{slide.role}</dd><dt>図の種類</dt><dd>{slide.visualType}</dd><dt>レイアウト</dt><dd>{slide.layoutType}</dd><dt>説明の流れ</dt><dd>{slide.narrativePattern}</dd><dt>タグ</dt><dd>{slide.tags.join('、')}</dd></dl></div>}
-          <button type="button" className="source-button" onClick={() => setNotice(`このモックには元${deck.sourceFormat}ファイルを含めていません。`)}>元資料を参照</button>
-          {notice && <p className="mock-notice" role="status">{notice}</p>}<p className="mock-note">分析情報は画面検討用の仮データです。</p>
+        <aside className="detail-facts"><p className="eyebrow">{kind === 'slide' ? `SLIDE · P.${page.pageNumber}` : `DOCUMENT · ${related.length} PAGES`}</p><h2>{kind === 'slide' ? displayHeading(page) : documentInfo.title}</h2>
+          {kind === 'slide' && page.summary && <p className="detail-summary">{page.summary}</p>}
+          <div className="detail-group"><h3>出典と文脈</h3><dl><dt>元資料</dt><dd>{documentInfo.title}</dd><dt>著者</dt><dd>{documentInfo.authors.join('、') || '未登録'}</dd><dt>元フォルダ</dt><dd>{documentInfo.folderPath.join(' / ') || '未登録'}</dd><dt>登録形式</dt><dd>{documentInfo.format.toUpperCase()}</dd></dl></div>
+          {kind === 'slide' && page.tags.length > 0 && <div className="detail-group"><h3>タグ</h3><p>{page.tags.join('、')}</p></div>}
         </aside>
-      </div>
+      </div>}
     </section>
   </div>
 }
@@ -167,9 +209,11 @@ function App() {
   const [resultType, setResultType] = useState<ResultType>(initial.resultType)
   const [query, setQuery] = useState(initial.query)
   const [draft, setDraft] = useState(initial.query)
-  const [filters, setFilters] = useState<Filters>(initial.filters)
-  const [sort, setSort] = useState(initial.sort)
-  const [searchStatus, setSearchStatus] = useState<SearchStatus>(initial.searchStatus)
+  const [filters, setFilters] = useState<SearchFilters>(initial.filters)
+  const [catalog, setCatalog] = useState<PageSummary[]>([])
+  const [pages, setPages] = useState<PageSummary[]>([])
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>('loading')
+  const [retry, setRetry] = useState(0)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [gridColumns, setGridColumns] = useState({ expanded: 2, collapsed: 3 })
   const [resultsWidth, setResultsWidth] = useState(0)
@@ -184,48 +228,51 @@ function App() {
   const scrollRef = useRef({ page: 0, results: 0 })
   const resultScrollRef = useRef<HTMLDivElement>(null)
   const resultsSectionRef = useRef<HTMLElement>(null)
-  const searchTimerRef = useRef<number | undefined>(undefined)
+  const tag = filters.tag
+  const folderPath = filters.folderPath
 
-  const makeUrl = (next: { resultType?: ResultType; query?: string; filters?: Filters; sort?: string } = {}) => {
-    const value = { resultType, query, filters, sort, ...next }
-    const p = new URLSearchParams()
-    if (value.query.trim()) p.set('q', value.query.trim())
-    if (value.resultType !== 'slides') p.set('view', value.resultType)
-    if (value.sort !== 'default') p.set('sort', value.sort)
-    for (const [key, item] of Object.entries(value.filters)) if (item) p.set(key, item)
-    return `${location.pathname}${p.size ? `?${p}` : ''}`
+  useEffect(() => {
+    const controller = new AbortController()
+    void searchPages('', emptyFilters, controller.signal).then((result) => {
+      if (!controller.signal.aborted) setCatalog(result)
+    }).catch(() => {})
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void searchPages(query, { tag, folderPath }, controller.signal).then((result) => {
+      if (controller.signal.aborted) return
+      setPages(result)
+      setSearchStatus('ready')
+    }).catch(() => { if (!controller.signal.aborted) setSearchStatus('error') })
+    return () => controller.abort()
+  }, [query, tag, folderPath, retry])
+
+  const makeUrl = (next: { resultType?: ResultType; query?: string; filters?: SearchFilters } = {}) => {
+    const value = { resultType, query, filters, ...next }
+    const params = new URLSearchParams()
+    if (value.query.trim()) params.set('q', value.query.trim())
+    if (value.resultType !== 'slides') params.set('view', value.resultType)
+    if (value.filters.tag) params.set('tag', value.filters.tag)
+    if (value.filters.folderPath) params.set('folderPath', value.filters.folderPath)
+    return `${location.pathname}${params.size ? `?${params}` : ''}`
   }
 
-  const update = (next: { resultType?: ResultType; query?: string; filters?: Filters; sort?: string }) => {
-    window.clearTimeout(searchTimerRef.current)
-    setSearchStatus('ready')
+  const update = (next: { resultType?: ResultType; query?: string; filters?: SearchFilters }) => {
     if (next.resultType) setResultType(next.resultType)
     if (next.query !== undefined) setQuery(next.query)
     if (next.filters) setFilters(next.filters)
-    if (next.sort) setSort(next.sort)
+    if (next.query !== undefined || next.filters) setSearchStatus('loading')
     setVisibleCount(6)
-    if (next.query !== undefined || next.filters || next.resultType || next.sort) resultScrollRef.current?.scrollTo(0, 0)
+    resultScrollRef.current?.scrollTo(0, 0)
     history.replaceState(null, '', makeUrl(next))
   }
 
-  const beginSearch = (nextQuery?: string) => {
-    window.clearTimeout(searchTimerRef.current)
-    if (nextQuery !== undefined) {
-      setQuery(nextQuery)
-      setVisibleCount(6)
-      resultScrollRef.current?.scrollTo(0, 0)
-    }
-    history.replaceState(null, '', makeUrl(nextQuery === undefined ? {} : { query: nextQuery }))
-    setSearchStatus('loading')
-    searchTimerRef.current = window.setTimeout(() => setSearchStatus('ready'), 500)
-  }
-
-  useEffect(() => () => window.clearTimeout(searchTimerRef.current), [])
-
   useEffect(() => {
     const onPop = () => {
-      window.clearTimeout(searchTimerRef.current)
       const state = readUrl()
+      const searchChanged = state.query !== query || state.filters.tag !== filters.tag || state.filters.folderPath !== filters.folderPath
       void runViewTransition(() => {
         setRegistrationOpen(location.pathname === '/register')
         setNotFound(isNotFoundRoute())
@@ -233,8 +280,7 @@ function App() {
         setQuery(state.query)
         setDraft(typeof history.state?.draft === 'string' ? history.state.draft : state.query)
         setFilters(state.filters)
-        setSort(state.sort)
-        setSearchStatus(state.searchStatus)
+        if (searchChanged) setSearchStatus('loading')
         setSelected(state.selected)
         setSelectedType(state.selectedType)
         setOverlay(Boolean(history.state?.background))
@@ -250,7 +296,7 @@ function App() {
     }
     addEventListener('popstate', onPop)
     return () => removeEventListener('popstate', onPop)
-  }, [])
+  }, [query, filters.tag, filters.folderPath])
 
   useEffect(() => {
     const element = resultsSectionRef.current
@@ -265,21 +311,25 @@ function App() {
   const open = (kind: 'slide' | 'deck', id: string) => {
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
-    const p = new URLSearchParams(location.search); p.delete('slide'); p.delete('deck'); p.set(kind, id)
+    const params = new URLSearchParams(location.search); params.delete('slide'); params.delete('deck'); params.set(kind, id)
     flushSync(() => setActiveTransitionName(`${kind}-${id}`))
-    void runViewTransition(() => { history.pushState({ background: location.href }, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType(kind); setOverlay(true) })
+    void runViewTransition(() => { history.pushState({ background: location.href }, '', `${location.pathname}?${params}`); setSelected(id); setSelectedType(kind); setOverlay(true) })
   }
   const close = () => {
     if (overlay && history.state?.background) history.back()
-    else { const p = new URLSearchParams(location.search); p.delete('slide'); p.delete('deck'); runViewTransition(() => { history.replaceState(null, '', `${location.pathname}${p.size ? `?${p}` : ''}`); setSelected(''); setOverlay(false) }) }
+    else { const params = new URLSearchParams(location.search); params.delete('slide'); params.delete('deck'); void runViewTransition(() => { history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false) }) }
   }
   const selectRelated = (id: string) => {
-    const p = new URLSearchParams(location.search); p.delete('deck'); p.set('slide', id)
+    const params = new URLSearchParams(location.search); params.delete('deck'); params.set('slide', id)
     flushSync(() => setActiveTransitionName(`slide-${id}`))
-    void runViewTransition(() => { history.replaceState(history.state, '', `${location.pathname}?${p}`); setSelected(id); setSelectedType('slide') })
+    void runViewTransition(() => { history.replaceState(history.state, '', `${location.pathname}?${params}`); setSelected(id); setSelectedType('slide') })
+  }
+  const fallbackToDeck = (id: string) => {
+    const params = new URLSearchParams(location.search); params.delete('slide')
+    history.replaceState(history.state, '', `${location.pathname}?${params}`)
+    setSelected(id); setSelectedType('deck')
   }
   const openRegistration = () => {
-    window.clearTimeout(searchTimerRef.current)
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     scrollRef.current = { page: window.scrollY, results: resultScrollRef.current?.scrollTop ?? 0 }
     history.replaceState({ ...(history.state ?? {}), draft }, '', location.href)
@@ -288,16 +338,19 @@ function App() {
   }
   const closeRegistration = () => {
     if (history.state?.registrationBackground) history.back()
-    else { const params = new URLSearchParams(location.search); params.delete('demo'); params.delete('slide'); params.delete('deck'); history.replaceState(null, '', `/${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
+    else { const params = new URLSearchParams(location.search); params.delete('slide'); params.delete('deck'); history.replaceState(null, '', `/${params.size ? `?${params}` : ''}`); setSelected(''); setOverlay(false); setRegistrationOpen(false) }
   }
 
-  const matchedSlides = slides.filter((slide) => matches(slide, query, filters))
-  if (sort === 'newest') matchedSlides.sort((a, b) => deckById.get(b.deckId)!.year - deckById.get(a.deckId)!.year)
-  const matchedDecks = decks.filter((deck) => matchedSlides.some((slide) => slide.deckId === deck.id))
-  if (sort === 'newest') matchedDecks.sort((a, b) => b.year - a.year)
-  const results = resultType === 'slides' ? matchedSlides : matchedDecks
-  const filterLabels: Record<keyof Filters, string> = { category: '資料区分', author: '著者', year: '発表年', role: '役割' }
-  const activeFilters = (Object.entries(filters) as [keyof Filters, string][]).filter(([, value]) => value)
+  const sortedPages = [...pages].sort((a, b) => a.document.title.localeCompare(b.document.title, 'ja') || a.pageNumber - b.pageNumber)
+  const deckMap = new Map<string, DeckResult>()
+  for (const page of sortedPages) {
+    const deck = deckMap.get(page.documentId) ?? { id: page.documentId, title: page.document.title, pages: [] }
+    deck.pages.push(page)
+    deckMap.set(page.documentId, deck)
+  }
+  const decks = [...deckMap.values()]
+  const results = resultType === 'slides' ? sortedPages : decks
+  const activeFilters = (Object.entries(filters) as [keyof SearchFilters, string][]).filter(([, value]) => value)
   const maxColumns = resultsWidth ? Math.max(1, Math.min(4, Math.floor((resultsWidth + 23) / 263))) : 4
   const preferredColumns = sidebarCollapsed ? gridColumns.collapsed : gridColumns.expanded
   const effectiveColumns = Math.min(preferredColumns, maxColumns)
@@ -310,34 +363,29 @@ function App() {
     <div className="app-shell" inert={Boolean(selected)}>
       <header className="site-header"><Brand /><button type="button" className="header-register" onClick={openRegistration}>資料を登録</button></header>
       <main className={`library${sidebarCollapsed ? ' library--sidebar-collapsed' : ''}`}>
-        <div className="search-area">
-          <form className="search-form" role="search" onSubmit={(e) => { e.preventDefault(); beginSearch(draft) }}>
-            <label htmlFor="library-query" className="sr-only">内容・著者・資料名を検索</label>
-            <input id="library-query" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="スライドの内容・著者・資料名を検索" />
-            <button type="submit">検索</button>
-          </form>
-        </div>
+        <div className="search-area"><form className="search-form" role="search" onSubmit={(event) => { event.preventDefault(); update({ query: draft }) }}>
+          <label htmlFor="library-query" className="sr-only">内容・著者・資料名を検索</label>
+          <input id="library-query" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="スライドの内容・著者・資料名を検索" />
+          <button type="submit">検索</button>
+        </form></div>
         <div className="results-frame">
           <aside className={`filter-sidebar${sidebarCollapsed ? ' filter-sidebar--collapsed' : ''}`} aria-label="絞り込み">
             <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'フィルタを開く' : 'フィルタを閉じる'} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? 'フィルタ ›' : 'フィルタ ‹'}</button>
-            {!sidebarCollapsed && <FilterControls filters={filters} onChange={(next) => update({ filters: next })} />}
+            {!sidebarCollapsed && <FilterControls filters={filters} pages={catalog} onChange={(next) => update({ filters: next })} />}
           </aside>
           <section ref={resultsSectionRef} className="results-section" aria-label="検索結果">
             <div className="results-toolbar">
               <div className="result-tabs" role="tablist" aria-label="検索結果の種類">
-                <button type="button" role="tab" aria-selected={resultType === 'slides'} onClick={() => update({ resultType: 'slides' })}>スライド {searchStatus === 'ready' && <span>{matchedSlides.length}</span>}</button>
-                <button type="button" role="tab" aria-selected={resultType === 'decks'} onClick={() => update({ resultType: 'decks' })}>発表資料 {searchStatus === 'ready' && <span>{matchedDecks.length}</span>}</button>
+                <button type="button" role="tab" aria-selected={resultType === 'slides'} onClick={() => update({ resultType: 'slides' })}>スライド {searchStatus === 'ready' && <span>{sortedPages.length}</span>}</button>
+                <button type="button" role="tab" aria-selected={resultType === 'decks'} onClick={() => update({ resultType: 'decks' })}>発表資料 {searchStatus === 'ready' && <span>{decks.length}</span>}</button>
               </div>
-              <div className="results-actions">
-                {maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count }))}>{count}</button>)}</div>}
-                <label className="sort-field"><span className="sr-only">並び順</span><select value={sort} onChange={(e) => update({ sort: e.target.value })}><option value="default">資料内の順</option><option value="newest">発表年の新しい順</option></select></label>
-              </div>
+              <div className="results-actions">{maxColumns >= 2 && <div className="column-switch" role="group" aria-label="グリッドの列数">{([2, 3, 4] as const).map((count) => <button key={count} type="button" aria-label={`${count}列表示`} aria-pressed={effectiveColumns === count} disabled={count > maxColumns} onClick={() => setGridColumns((current) => ({ ...current, [sidebarCollapsed ? 'collapsed' : 'expanded']: count }))}>{count}</button>)}</div>}</div>
             </div>
-            {activeFilters.length > 0 && <div className="active-row">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => update({ filters: { ...filters, [key]: '' } })}>{filterLabels[key]}: {value} <span aria-hidden="true">×</span></button>)}<button type="button" className="clear-button" onClick={() => update({ filters: emptyFilters })}>条件を解除</button></div>}
+            {activeFilters.length > 0 && <div className="active-row">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => update({ filters: { ...filters, [key]: '' } })}>{key === 'tag' ? 'タグ' : '元フォルダ'}: {value} <span aria-hidden="true">×</span></button>)}<button type="button" className="clear-button" onClick={() => update({ filters: emptyFilters })}>条件を解除</button></div>}
             <div ref={resultScrollRef} className="result-scroll" role="region" aria-label="検索結果の一覧" aria-busy={searchStatus === 'loading'} tabIndex={0}>
-              {searchStatus === 'loading' ? <SearchSkeleton gridStyle={gridStyle} /> : searchStatus === 'error' ? <SearchMessage kind="error" onRetry={() => beginSearch()} /> : results.length ? <>
+              {searchStatus === 'loading' ? <SearchSkeleton gridStyle={gridStyle} /> : searchStatus === 'error' ? <SearchMessage kind="error" onRetry={() => { setSearchStatus('loading'); setRetry((value) => value + 1) }} /> : results.length ? <>
                 <div className="result-grid" style={gridStyle}>
-                  {resultType === 'slides' ? matchedSlides.slice(0, visibleCount).map((slide) => <ResultCard key={slide.id} slide={slide} deck={deckById.get(slide.deckId)!} activeTransitionName={activeTransitionName} onClick={() => open('slide', slide.id)} />) : matchedDecks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} activeTransitionName={activeTransitionName} onClick={() => open('deck', deck.id)} />)}
+                  {resultType === 'slides' ? sortedPages.slice(0, visibleCount).map((page) => <ResultCard key={page.id} page={page} activeTransitionName={activeTransitionName} onClick={() => open('slide', page.id)} />) : decks.slice(0, visibleCount).map((deck) => <ResultCard key={deck.id} deck={deck} activeTransitionName={activeTransitionName} onClick={() => open('deck', deck.id)} />)}
                 </div>
                 {visibleCount < results.length && <button type="button" className="load-more" onClick={() => setVisibleCount((count) => count + 6)}>さらに表示 · {Math.min(6, results.length - visibleCount)}件</button>}
               </> : <SearchMessage kind="empty" />}
@@ -346,7 +394,7 @@ function App() {
         </div>
       </main>
     </div>
-    {selected && <Detail key={`${selectedType}-${selected}`} id={selected} kind={selectedType} overlay={overlay} onClose={close} onSelectSlide={selectRelated} />}
+    {selected && <Detail key={`${selectedType}-${selected}`} id={selected} kind={selectedType} overlay={overlay} onClose={close} onSelectSlide={selectRelated} onMissing={() => setNotFound(true)} onFallbackDeck={fallbackToDeck} />}
   </>
 }
 
