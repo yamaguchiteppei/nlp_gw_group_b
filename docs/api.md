@@ -80,9 +80,44 @@ APIでいうページは、PDF/PPTXの1ページを表すスライド資産で�
 
 資料単位の一覧・検索で全ページ取得が重くなった段階では、サーバー側の資料検索・集計APIを検討する。資料内ページ一覧APIは、資料全体を開いたときの移動に使う。
 
-現行の検索条件は `query`・タグ・著者・元フォルダである。資料区分・発表年・スライドの役割による絞り込みはまだ対応していない。資料区分 `category` と発表年 `presentationYear` を利用する際は、登録情報とページ応答に追加し、値が不明な場合を許容する。フォルダ名だけから確定値を推測しない。登録前の自動抽出結果はユーザーが修正できるようにする。
+現行の検索条件は `query`・タグ・著者・元フォルダである。資料区分・発表年・スライドの役割による絞り込みはまだ対応していない。追加する項目と値は[データ設計](data-model.md)にまとめる。
 
 Backendは登録したPDF/PPTXをページ画像とテキストに変換し、ページ一覧・検索・詳細・資料内ページ一覧・プレビューから参照できる。画像からの文字認識は行わないため、文字を含まないページの見出しと概要は空文字列になる。
+
+## 検索メタデータのAPI拡張案（Issue #39・未実装）
+
+`PageSummary` と `Page` に `slideRole: string | null`、各応答の `document` に `category: string | null` と `presentationYear: number | null` を追加する。`Page` の `document` には `origin: { "kind": "upload" | "google_drive" }` を追加する。既存資料の区分・発表年・役割は `null`、登録経路は `upload` とし、保存済みJSONに新項目がなくても読み込める既定値を設ける。DriveファイルIDなどの内部情報は通常のページ応答に含めない。
+
+`POST /api/pages/search` の `filters` に `category`、`presentationYear`、`slideRole`、`folderId` を追加する。前の3項目は指定値に完全一致させる。`folderId` はDrive由来の資料が保持するフォルダIDの階層に含まれるかで判定し、既存の `folderPath` は名前による絞り込みとして残す。条件は任意で、指定した条件をANDで組み合わせる。未設定値を絞り込む条件は初期対応に含めない。例：
+
+```json
+{
+  "query": "モデル構造",
+  "filters": {
+    "category": "research_presentation",
+    "presentationYear": 2026,
+    "slideRole": "method"
+  },
+  "limit": 20,
+  "offset": 0
+}
+```
+
+多数のDrive資料を取り込んだ後もフィルタ候補を得るため、`GET /api/search/facets?field=...&q=...&limit=50&offset=0` を追加する。`field` は `authors`, `tags`, `folders`, `categories`, `presentationYears`, `slideRoles` のいずれか。応答は選択した項目の `items`, `total`, `limit`, `offset` を持ち、候補名の部分一致検索とページ分割に対応する。`limit`・`offset` は既存の一覧APIと同じ範囲とし、`q` の省略時は全候補を対象にする。`null` は候補から除く。候補は検索結果の現在ページには依存させない。
+
+`folders` では各階層を候補として返す。`items` の例は `[{"kind":"google_drive","value":"folder-id","label":"論文読み会 / 2025"},{"kind":"upload","value":"論文読み会/2025","label":"論文読み会 / 2025"}]` とする。Drive由来の選択値は `filters.folderId`、手入力の元フォルダは `filters.folderPath` に使う。同名や `/` を含むDriveフォルダ名はIDで区別する。他の `field` の `items` は文字列または年の数値の配列とする。
+
+`POST /api/documents` の登録フォームには任意の `category` と `presentationYear` を追加する。登録後の訂正には `PATCH /api/documents/{documentId}/metadata`（`title`, `authors`, `category`, `presentationYear` の一部）と `PATCH /api/pages/{pageId}/metadata`（`slideRole`）を設ける。省略した項目は変更せず、`category`・`presentationYear`・`slideRole` の `null` は未設定に戻し、`authors: []` は著者を空にする。資料メタデータの正本は `Document` とし、ページ応答と検索は常に現在の資料情報を参照する。保存済みページ内の資料スナップショットに依存しない。更新は既存のメタデータロック内で読み取り・変更・保存を行い、別項目への同時更新が失われないようにする。出典のDriveファイルIDやフォルダIDはこの更新APIで変更しない。
+
+検索画面では現在の元フォルダ・著者・タグに資料区分・発表年・ページの役割を加える。資料単位表示でも同じページ検索結果を資料IDでまとめるため、`slideRole` は「その役割のページを含む資料」という意味になる。候補はFacet APIから取得し、ページ一覧を全件取得して候補を作る方式を置き換える。
+
+## Drive PDF取り込みのAPI案（Issue #6・未実装）
+
+`POST /api/documents/import/google-drive` はDriveのPDFファイルIDを受け取り、PDF本体をライブラリ側へ保存して既存の取込処理に渡す。資料にはDriveファイルID、更新時刻、取得できたフォルダのID・名前を保存し、`folderPath[]` は表示用に生成する。取り込み対象が共有ライブラリの利用者全員に閲覧可能な資料か、取り込み前に確認する。PDF以外やダウンロード不可のファイルは受け付けず、既存の50 MiB上限をダウンロード中にも適用して、失敗時は途中ファイルを削除する。
+
+DriveファイルIDの確認と資料登録は同じメタデータロック内で行い、同時リクエストでも資料IDを重複発行しない。同じファイルIDで既存資料が `pending` / `ready` ならそのIDと状態を返し、`failed` なら同じIDで取り込みを再試行できるようにする。自動同期・更新されたPDFの再取り込みは別途設計する。
+
+DriveのPDFを登録した場合、`GET /api/documents/{documentId}/source` は取り込んだPDFを返す。Driveの所有者を著者、Driveの更新日時を発表年、フォルダ名を区分や役割として確定しない。フォルダの一部を取得できないときは分かる範囲だけ保持する。Driveからの取得方法とフォルダの扱いは[Google Driveのファイル属性](https://developers.google.com/workspace/drive/api/reference/rest/v3/files)と[ファイルのダウンロード](https://developers.google.com/workspace/drive/api/guides/manage-downloads)を参照する。
 
 ## 資料登録（フェーズ1）
 
@@ -125,4 +160,4 @@ Backendは登録したPDF/PPTXをページ画像とテキストに変換し、�
 
 元ファイルの参照先はページではなく資料に紐づける。`GET /api/documents/{documentId}/source` は登録時のPDFまたはPPTX全体を元のファイル名で返す。元PPTXが登録されていない資料について、PPTXを返すことは保証しない。ページ1枚を独立したPPTXとして抽出する機能は対象に含めない。
 
-削除、Drive連携、意味検索、解析情報のAPIは、各機能を実装する前に詳細化する。検索結果や詳細応答にEmbeddingの生ベクトルやPPTXの内部XMLは含めない。
+削除、Drive連携の認証・エラー形式、意味検索、解析情報のAPIは、各機能を実装する前に詳細化する。検索結果や詳細応答にEmbeddingの生ベクトルやPPTXの内部XMLは含めない。
