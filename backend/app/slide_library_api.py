@@ -1,24 +1,55 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+import logging
 import os
+import shutil
+import tempfile
+import unicodedata
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from app.importer import ImportFailure, extract_pages
+
 router = APIRouter(prefix="/api", tags=["Slide Library"])
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path("/data")
 UPLOAD_DIR = DATA_DIR / "uploads"
+PREVIEW_DIR = DATA_DIR / "previews"
 METADATA_FILE = DATA_DIR / "documents.json"
+PAGE_METADATA_FILE = DATA_DIR / "pages.json"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MiB
 DOCUMENTS_LOCK = Lock()
+PAGES_LOCK = Lock()
+
+
+@contextmanager
+def metadata_file_lock():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with (DATA_DIR / ".metadata.lock").open("a+b") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 class DocumentSummary(BaseModel):
@@ -83,26 +114,26 @@ class DocumentStatus(BaseModel):
     error: str | None = None
 
 
-# 仮データ。DB導入時にリポジトリ層へ置き換える。
-PAGES: dict[str, Page] = {
-    "page-001": Page(
-        id="page-001",
-        documentId="document-001",
-        pageNumber=2,
-        heading="研究背景",
-        summary="研究課題を説明するサンプルページ",
-        tags=["背景"],
-        previewUrl=None,
-        document=DocumentDetail(
-            id="document-001",
-            title="サンプル発表資料",
-            authors=["サンプル著者"],
-            folderPath=["論文読み会", "2025"],
-            fileName="sample.pdf",
-            format="pdf",
-        ),
-    )
-}
+# テストでは差し替え可能。通常のページは pages.json に保存する。
+PAGES: dict[str, Page] = {}
+
+
+def read_pages() -> dict[str, Page]:
+    pages = dict(PAGES)
+    if PAGE_METADATA_FILE.exists():
+        stored = json.loads(PAGE_METADATA_FILE.read_text(encoding="utf-8"))
+        pages.update(
+            {page_id: Page.model_validate(value) for page_id, value in stored.items()}
+        )
+    return pages
+
+
+def visible_pages() -> dict[str, Page]:
+    documents = read_documents()
+    return {
+        page_id: page for page_id, page in read_pages().items()
+        if documents.get(page.documentId, {}).get("status") == "ready"
+    }
 
 
 def validate_pagination(limit: int, offset: int) -> None:
@@ -135,21 +166,23 @@ def list_pages(
     offset: int = Query(0),
 ):
     validate_pagination(limit, offset)
-    return list_result(list(PAGES.values()), limit, offset)
+    return list_result(list(visible_pages().values()), limit, offset)
 
 
 @router.post("/pages/search", response_model=PageSummaryList)
 def search_pages(request: SearchRequest):
     validate_pagination(request.limit, request.offset)
     matched = []
+    terms = unicodedata.normalize("NFKC", request.query).casefold().split()
 
-    for page in PAGES.values():
+    for page in visible_pages().values():
         doc = page.document
         searchable = " ".join(
             [doc.title, *doc.authors, page.heading, page.summary]
         )
 
-        if request.query.casefold() not in searchable.casefold():
+        normalized = unicodedata.normalize("NFKC", searchable).casefold()
+        if any(term not in normalized for term in terms):
             continue
 
         if request.filters.tag is not None:
@@ -171,18 +204,37 @@ def search_pages(request: SearchRequest):
 
 @router.get("/pages/{pageId}", response_model=Page)
 def get_page(pageId: str):
-    page = PAGES.get(pageId)
+    page = visible_pages().get(pageId)
     if page is None:
         raise HTTPException(status_code=404, detail="Page not found")
     return page
 
 
-@router.put("/pages/{pageId}/tags", response_model=Page)
-def update_tags(pageId: str, request: TagsRequest):
-    page = PAGES.get(pageId)
+@router.get(
+    "/pages/{pageId}/preview",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}}
+        }
+    },
+)
+def get_page_preview(pageId: str) -> FileResponse:
+    page = visible_pages().get(pageId)
     if page is None:
         raise HTTPException(status_code=404, detail="Page not found")
 
+    preview_path = (PREVIEW_DIR / page.documentId / f"{page.pageNumber}.png").resolve()
+    if (
+        not preview_path.is_relative_to(PREVIEW_DIR.resolve())
+        or not preview_path.is_file()
+    ):
+        raise HTTPException(status_code=404, detail="Preview not found")
+    return FileResponse(preview_path, media_type="image/png")
+
+
+@router.put("/pages/{pageId}/tags", response_model=Page)
+def update_tags(pageId: str, request: TagsRequest):
     tags = [tag.strip() for tag in request.tags]
     if any(not tag for tag in tags) or len(tags) != len(set(tags)):
         raise HTTPException(
@@ -190,8 +242,17 @@ def update_tags(pageId: str, request: TagsRequest):
             detail="Tags must be nonempty and unique",
         )
 
-    page.tags = tags
-    return page
+    with PAGES_LOCK, metadata_file_lock():
+        pages = read_pages()
+        page = pages.get(pageId)
+        if (
+            page is None
+            or read_documents().get(page.documentId, {}).get("status") != "ready"
+        ):
+            raise HTTPException(status_code=404, detail="Page not found")
+        page.tags = tags
+        write_pages(pages)
+        return page
 
 
 def read_documents() -> dict:
@@ -201,13 +262,25 @@ def read_documents() -> dict:
 
 
 def write_documents(documents: dict) -> None:
-    temporary_path = DATA_DIR / f".documents-{uuid.uuid4().hex}.tmp"
+    write_json(METADATA_FILE, documents)
+
+
+def write_pages(pages: dict[str, Page]) -> None:
+    write_json(
+        PAGE_METADATA_FILE,
+        {page_id: page.model_dump() for page_id, page in pages.items()},
+    )
+
+
+def write_json(path: Path, value: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    temporary_path = DATA_DIR / f".{path.stem}-{uuid.uuid4().hex}.tmp"
     try:
         temporary_path.write_text(
-            json.dumps(documents, ensure_ascii=False, indent=2),
+            json.dumps(value, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        os.replace(temporary_path, METADATA_FILE)
+        os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
 
@@ -222,6 +295,7 @@ def safe_filename(filename: str) -> str:
     response_model=DocumentAccepted,
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File()],
     title: Annotated[str, Form()],
     authors: Annotated[list[str] | None, Form()] = None,
@@ -256,7 +330,7 @@ async def upload_document(
     saved_path = UPLOAD_DIR / f"{document_id}{suffix}"
     saved_path.write_bytes(content)
 
-    with DOCUMENTS_LOCK:
+    with DOCUMENTS_LOCK, metadata_file_lock():
         documents = read_documents()
         documents[document_id] = {
             "id": document_id,
@@ -273,7 +347,94 @@ async def upload_document(
 
         write_documents(documents)
 
+    background_tasks.add_task(process_document, document_id)
     return DocumentAccepted(id=document_id)
+
+
+def set_document_result(
+    document_id: str, status: Literal["ready", "failed"],
+    page_count: int | None = None, error: str | None = None,
+) -> None:
+    with DOCUMENTS_LOCK, metadata_file_lock():
+        documents = read_documents()
+        document = documents.get(document_id)
+        if document is None:
+            return
+        document.update(status=status, pageCount=page_count, error=error)
+        write_documents(documents)
+
+
+def process_document(document_id: str) -> None:
+    preview_dir = PREVIEW_DIR / document_id
+    try:
+        document = read_documents().get(document_id)
+        if document is None:
+            return
+        source_path = Path(document["savedPath"]).resolve()
+        if (
+            not source_path.is_relative_to(UPLOAD_DIR.resolve())
+            or not source_path.is_file()
+        ):
+            raise ImportFailure("元ファイルが見つかりません")
+
+        with tempfile.TemporaryDirectory(prefix="slide-import-", dir=DATA_DIR) as name:
+            workspace = Path(name)
+            extracted = extract_pages(source_path, document["format"], workspace)
+            staged_previews = workspace / "previews"
+            staged_previews.mkdir()
+
+            detail = DocumentDetail(
+                id=document_id,
+                title=document["title"],
+                authors=document["authors"],
+                folderPath=document["folderPath"],
+                fileName=document["fileName"],
+                format=document["format"],
+            )
+            new_pages = {}
+            for extracted_page in extracted:
+                page_id = str(uuid.uuid4())
+                shutil.copy2(
+                    extracted_page.image_path,
+                    staged_previews / f"{extracted_page.page_number}.png",
+                )
+                new_pages[page_id] = Page(
+                    id=page_id,
+                    documentId=document_id,
+                    pageNumber=extracted_page.page_number,
+                    heading=extracted_page.heading,
+                    summary=extracted_page.summary,
+                    tags=[],
+                    previewUrl=f"/api/pages/{page_id}/preview",
+                    document=detail,
+                )
+
+            PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+            if preview_dir.exists():
+                shutil.rmtree(preview_dir)
+            staged_previews.rename(preview_dir)
+            with PAGES_LOCK, metadata_file_lock():
+                pages = read_pages()
+                pages = {
+                    page_id: page for page_id, page in pages.items()
+                    if page.documentId != document_id
+                }
+                pages.update(new_pages)
+                write_pages(pages)
+
+        set_document_result(document_id, "ready", page_count=len(new_pages))
+    except ImportFailure as exc:
+        error = str(exc)
+    except Exception:
+        logger.exception("Failed to import document %s", document_id)
+        error = "資料を解析できませんでした"
+    else:
+        return
+
+    try:
+        set_document_result(document_id, "failed", error=error)
+    except Exception:
+        logger.exception("Failed to update import status for %s", document_id)
 
 
 @router.get(
@@ -348,7 +509,7 @@ def list_document_pages(
     if documentId not in read_documents():
         raise HTTPException(status_code=404, detail="Document not found")
 
-    pages = [page for page in PAGES.values() if page.documentId == documentId]
+    pages = [page for page in visible_pages().values() if page.documentId == documentId]
     pages.sort(key=lambda page: (page.pageNumber, page.id))
     return PageSummaryList(
         items=[to_summary(page) for page in pages[offset:offset + limit]],

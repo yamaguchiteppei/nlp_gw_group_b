@@ -14,7 +14,11 @@ from app.main import app
 def isolated_uploads(tmp_path, monkeypatch):
     monkeypatch.setattr(slide_library_api, "DATA_DIR", tmp_path)
     monkeypatch.setattr(slide_library_api, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(slide_library_api, "PREVIEW_DIR", tmp_path / "previews")
     monkeypatch.setattr(slide_library_api, "METADATA_FILE", tmp_path / "documents.json")
+    monkeypatch.setattr(
+        slide_library_api, "PAGE_METADATA_FILE", tmp_path / "pages.json"
+    )
 
 
 @pytest.mark.parametrize(

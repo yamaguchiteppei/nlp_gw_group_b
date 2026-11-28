@@ -8,7 +8,7 @@
 flowchart LR
   UI[React画面] --> API[Slide Library API]
   Agent[Agent・Skill] --> API
-  API --> Store[メタデータDB]
+  API --> Store[メタデータ保存領域]
   API --> Files[ファイル保存領域]
   Import[PDF/PPTX取込処理] --> Store
   Import --> Files
@@ -34,9 +34,9 @@ Google Drive連携やEmbedding検索は後続段階で扱う。実ファイル�
 
 ## データ処理
 
-PDF/PPTX本体とページのプレビューはファイル用の保存領域、検索対象と元ファイル・ページの対応はDBに置く。取込処理はページ画像と取得可能な文字列を作り、[データ設計](data-model.md)の資料・ページに関連付ける。PDFと元PPTXが対応する場合も、片方だけ登録される場合も扱えるようにする。
+PDF/PPTX本体とページのプレビューはファイル用の保存領域、検索対象と元ファイル・ページの対応はメタデータ保存領域に置く。初期実装ではJSONファイルに永続化し、検索・更新量が増えた段階でDBへ移行する。取込処理はページ画像と取得可能な文字列を作り、[データ設計](data-model.md)の資料・ページに関連付ける。PDFと元PPTXが対応する場合も、片方だけ登録される場合も扱えるようにする。
 
-開発環境ではホストの `data/` をAPIコンテナの `/data` にマウントする。手元の資料は `data/imports/` に置き、登録後の元ファイルは `/data/documents/{documentId}/source.pdf` または `source.pptx`、生成したプレビューは `/data/previews/{documentId}/{pageNumber}.png` に保存する方針とする。ファイルの保存先はDBで資料・ページIDに関連付け、APIにはホストの絶対パスを返さない。`data/` はGitで管理しない。
+開発環境ではホストの `data/` をAPIコンテナの `/data` にマウントする。手元の資料は `data/imports/` に置き、登録後の元ファイルは `/data/uploads/{documentId}.pdf` または `.pptx`、生成したプレビューは `/data/previews/{documentId}/{pageNumber}.png` に保存する。資料とページのメタデータは `/data/documents.json` と `/data/pages.json` に置き、APIにはホストの絶対パスを返さない。`data/` はGitで管理しない。
 
 Google Drive連携ではフォルダ階層を出典として保持する。フォルダは資料の所属、タグはページの内容・役割として分ける。Embeddingなどの検索用データはページIDに紐づく派生データとして追加する。
 
